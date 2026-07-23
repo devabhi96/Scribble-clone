@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service;
 
 import java.security.SecureRandom;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Service
@@ -37,6 +38,17 @@ private String generateUniqueCode(){
     while(rooms.containsKey(code));
     return code;
 }
+
+public String joinRoom(String roomCode,String playerName){
+    GameRoom room = rooms.get(roomCode);
+    if(room == null){
+        throw new IllegalArgumentException("Room code not found " + roomCode);
+    }
+    String playerId = UUID.randomUUID().toString();
+    room.getPlayers().put(playerId,playerName);
+    return playerId;
+}
+
 
 
 
