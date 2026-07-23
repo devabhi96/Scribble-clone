@@ -1,0 +1,10 @@
+# Frontend (Node/Vite)
+node_modules/
+dist/
+.env
+frontend/dist/
+
+# IDE
+.idea/
+.vscode/
+*.iml
