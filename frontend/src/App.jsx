@@ -1,3 +1,5 @@
+import DrawingCanvas from "./DrawingCanvas.jsx";
+
 import { useEffect, useState, useRef } from "react";
 import { Client } from '@stomp/stompjs'
 
@@ -98,6 +100,7 @@ function App() {
   return (
     <div style={{ fontFamily: 'sans-serif', padding: '2rem' }}>
       <h1>Room: {roomCode}</h1>
+      <DrawingCanvas/>
       <p>Share this code with friends to have them join.</p>
 
       <h3>Players ({players.length})</h3>
