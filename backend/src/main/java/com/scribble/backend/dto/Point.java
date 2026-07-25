@@ -1,4 +1,4 @@
 package com.scribble.backend.dto;
 
-public class Point {
+public record Point(int x,int y,String type){
 }

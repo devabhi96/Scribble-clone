@@ -26,15 +26,16 @@ public class RoomSocketController {
     @MessageMapping("/room/{roomCode}/join")
     public void handleJoin(@DestinationVariable String roomCode, JoinMessage message) {
         GameRoom room = roomService.getRoom(roomCode.toUpperCase());
-        if (room == null) return; // room doesn't exist, silently ignore for now
+        if (room == null) return;
 
         roomService.joinRoom(roomCode.toUpperCase(), message.playerName());
 
-        Collection<String> playerNames = room.getPlayers().values();
-        messagingTemplate.convertAndSend(
-                "/topic/room/" + roomCode.toUpperCase() + "/players",
-                new PlayerListMessage(playerNames)
-        );
-
+        room.withLock(() -> {
+                    Collection<String> playerNames = room.getPlayers().values();
+                    messagingTemplate.convertAndSend(
+                            "/topic/room/" + roomCode.toUpperCase() + "/players",
+                            new PlayerListMessage(playerNames)
+                    );
+        });
     }
 }

@@ -1,4 +1,6 @@
 package com.scribble.backend.dto;
 
-public class DrawBatchMessage {
+import java.util.List;
+
+public record DrawBatchMessage(List<Point> points , String color, int brushSize) {
 }

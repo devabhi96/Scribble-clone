@@ -13,7 +13,7 @@ function App() {
   const [players, setPlayers] = useState([])
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(false)
-  const stompClientRef = useRef(null)
+  const [stompClient, setStompClient] = useState(null)
 
   useEffect(() => {
     if (!roomCode) return
@@ -38,7 +38,7 @@ function App() {
     })
 
     client.activate()
-    stompClientRef.current = client
+    setStompClient(client) 
 
     return () => {
       client.deactivate()
@@ -100,7 +100,7 @@ function App() {
   return (
     <div style={{ fontFamily: 'sans-serif', padding: '2rem' }}>
       <h1>Room: {roomCode}</h1>
-      <DrawingCanvas/>
+      <DrawingCanvas stompClient={stompClient} roomCode={roomCode}/>
       <p>Share this code with friends to have them join.</p>
 
       <h3>Players ({players.length})</h3>
