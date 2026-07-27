@@ -58,6 +58,7 @@ function DrawingCanvas({ stompClient, roomCode }) {
     } else {
       const previousOnConnect = stompClient.onConnect
       stompClient.onConnect = (frame) => { 
+        if(previousOnConnect) previousOnConnect(frame)
         subscription = trySubscribe() }
     }
 

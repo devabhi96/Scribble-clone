@@ -1,4 +1,7 @@
 package com.scribble.backend.dto;
 
-public class GameStateMessage {
-}
+public record GameStateMessage (
+    String state,
+    String maskedWord,
+    String currentDrawerId
+){}

@@ -25,17 +25,24 @@ public class RoomSocketController {
 
     @MessageMapping("/room/{roomCode}/join")
     public void handleJoin(@DestinationVariable String roomCode, JoinMessage message) {
+        System.out.println("JOIN RECEIVED: roomCode=" + roomCode + " playerName=" + message.playerName());
+
         GameRoom room = roomService.getRoom(roomCode.toUpperCase());
-        if (room == null) return;
+        if (room == null) {
+            System.out.println("ROOM NOT FOUND: " + roomCode.toUpperCase());
+            return;
+        }
 
         roomService.joinRoom(roomCode.toUpperCase(), message.playerName());
 
         room.withLock(() -> {
-                    Collection<String> playerNames = room.getPlayers().values();
-                    messagingTemplate.convertAndSend(
-                            "/topic/room/" + roomCode.toUpperCase() + "/players",
-                            new PlayerListMessage(playerNames)
-                    );
+            Collection<String> playerNames = room.getPlayers().values();
+            System.out.println("BROADCASTING PLAYERS: " + playerNames);
+            messagingTemplate.convertAndSend(
+                    "/topic/room/" + roomCode.toUpperCase() + "/players",
+                    new PlayerListMessage(playerNames)
+            );
         });
     }
+
 }

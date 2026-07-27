@@ -1,3 +1,4 @@
+
 import DrawingCanvas from "./DrawingCanvas.jsx";
 
 import { useEffect, useState, useRef } from "react";
@@ -64,8 +65,11 @@ function App() {
 
   if (!roomCode) {
     return (
+      
       <div style={{ fontFamily: 'sans-serif', padding: '2rem', maxWidth: '400px' }}>
         <h1>Scribble Clone</h1>
+
+            
 
         <input
           type="text"
