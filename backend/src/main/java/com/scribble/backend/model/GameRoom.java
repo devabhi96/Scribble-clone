@@ -9,9 +9,10 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 
+
 @Getter
 public class GameRoom {
-
+    @Setter private int timeRemainingSeconds = 0;
     public enum GameState {
         WAITING, CHOOSING_WORD, DRAWING, ROUND_END, GAME_OVER
     }

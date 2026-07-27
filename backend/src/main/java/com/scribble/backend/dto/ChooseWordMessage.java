@@ -1,4 +1,3 @@
 package com.scribble.backend.dto;
 
-public class ChooseWordMessage {
-}
+public record ChooseWordMessage(String chosenWord) {}

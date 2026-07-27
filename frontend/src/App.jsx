@@ -1,4 +1,3 @@
-
 import DrawingCanvas from "./DrawingCanvas.jsx";
 
 import { useEffect, useState, useRef } from "react";
@@ -27,6 +26,15 @@ function App() {
           setPlayers(data.players || [])
         })
 
+       
+        client.subscribe(`/topic/room/${roomCode}/state`, (message) => {
+          console.log('GAME STATE:', JSON.parse(message.body))
+        })
+
+        client.subscribe(`/topic/room/${roomCode}/word-choices`, (message) => {
+          console.log('WORD CHOICES:', JSON.parse(message.body))
+        })
+      
 
         client.publish({
           destination: `/app/room/${roomCode}/join`,
@@ -39,7 +47,7 @@ function App() {
     })
 
     client.activate()
-    setStompClient(client) 
+    setStompClient(client)
 
     return () => {
       client.deactivate()
@@ -65,11 +73,8 @@ function App() {
 
   if (!roomCode) {
     return (
-      
       <div style={{ fontFamily: 'sans-serif', padding: '2rem', maxWidth: '400px' }}>
         <h1>Scribble Clone</h1>
-
-            
 
         <input
           type="text"
@@ -104,6 +109,22 @@ function App() {
   return (
     <div style={{ fontFamily: 'sans-serif', padding: '2rem' }}>
       <h1>Room: {roomCode}</h1>
+      <button onClick={() => {
+        stompClient.publish({ destination: `/app/room/${roomCode}/start` })
+      }}>
+        Start Game (test)
+      </button>
+
+        <button onClick={() => {
+  stompClient.publish({
+    destination: `/app/room/${roomCode}/choose-word`,
+    body: JSON.stringify({ chosenWord: 'apple' })
+  })
+}}>
+  Choose "apple" (test)
+</button>
+
+
       <DrawingCanvas stompClient={stompClient} roomCode={roomCode}/>
       <p>Share this code with friends to have them join.</p>
 
