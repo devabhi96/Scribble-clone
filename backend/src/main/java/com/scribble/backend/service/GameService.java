@@ -1,4 +1,5 @@
 package com.scribble.backend.service;
+import java.sql.Time;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -8,6 +9,7 @@ import java.util.Map;
 
 import com.scribble.backend.dto.ChatOrGuessBroadcast;
 import com.scribble.backend.dto.GameStateMessage;
+import com.scribble.backend.dto.PlayerListMessage;
 import com.scribble.backend.dto.WordChoicesMessage;
 
 import com.scribble.backend.model.GameRoom;
@@ -18,7 +20,7 @@ import java.util.List;
 
 @Service
 public class GameService {
-
+    private static final int TOTAL_ROUNDS = 3;
     private static final int ROUND_DURATION_SECONDS = 60;
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(4);
     private final Map<String, ScheduledFuture<?>> activeTimers = new ConcurrentHashMap<>();
@@ -51,6 +53,8 @@ public class GameService {
     }
 
     private void startTurn(GameRoom room) {
+        cancelTimer(room.getRoomCode());
+
         List<String> order = room.getTurnOrder();
         if (order.isEmpty()) {
             System.out.println("START TURN: turn order is empty, aborting");
@@ -70,6 +74,7 @@ public class GameService {
         );
 
         broadcastState(room);
+        broadcastPlayers(room);
     }
     public void chooseWord(String roomCode, String chosenWord) {
         GameRoom room = roomService.getRoom(roomCode);
@@ -85,7 +90,6 @@ public class GameService {
             startTimer(room);
         });
     }
-
     private void startTimer(GameRoom room) {
         cancelTimer(room.getRoomCode());
 
@@ -98,6 +102,9 @@ public class GameService {
                     System.out.println("ROUND ENDED (time up) for room " + room.getRoomCode());
                     cancelTimer(room.getRoomCode());
                     room.setState(GameRoom.GameState.ROUND_END);
+                    broadcastState(room);
+                    scheduler.schedule(() -> room.withLock(() -> advanceTurn(room)), 3, TimeUnit.SECONDS);
+                    return; // exits the inner withLock lambda, skips the line below
                 }
                 broadcastState(room);
             });
@@ -105,6 +112,9 @@ public class GameService {
 
         activeTimers.put(room.getRoomCode(), future);
     }
+
+
+
 
     private void cancelTimer(String roomCode) {
         ScheduledFuture<?> existing = activeTimers.remove(roomCode);
@@ -148,6 +158,7 @@ public class GameService {
                         "/topic/room/" + roomCode + "/chat",
                         new ChatOrGuessBroadcast(playerName, "guessed the word!", true)
                 );
+                broadcastPlayers(room);
 
                 int totalGuessers = room.getPlayers().size() - 1; // everyone except the drawer
                 if (room.getCorrectGuessers().size() >= totalGuessers && totalGuessers > 0) {
@@ -168,7 +179,35 @@ public class GameService {
         room.setState(GameRoom.GameState.ROUND_END);
         room.resetCorrectGuessers();
         broadcastState(room);
+        scheduler.schedule(() -> room.withLock(() -> advanceTurn(room)), 3, TimeUnit.SECONDS);
     }
 
+    private void advanceTurn(GameRoom room){
+        room.resetCorrectGuessers();
+        room.setCurrentWord(null);
+
+        int nextIndex = room.getCurrentTurnIndex() + 1;
+
+        if(nextIndex >= room.getTurnOrder().size()){
+            room.setCurrentRound(room.getCurrentRound()+1);
+            nextIndex =0;
+        }
+
+        if(room.getCurrentRound() >= TOTAL_ROUNDS){
+            room.setState(GameRoom.GameState.GAME_OVER);
+            broadcastState(room);
+            broadcastPlayers(room);
+            return;
+        }
+        room.setCurrentTurnIndex(nextIndex);
+        startTurn(room);
+    }
+
+    private void broadcastPlayers(GameRoom room){
+        messagingTemplate.convertAndSend(
+                "/topic/room/" + room.getRoomCode() + "/players",
+                new PlayerListMessage(room.toPlayerDtos())
+        );
+    }
 
 }

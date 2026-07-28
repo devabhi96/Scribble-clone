@@ -37,11 +37,10 @@ public class RoomSocketController {
         roomService.joinRoom(roomCode.toUpperCase(), message.playerId(), message.playerName());
 
         room.withLock(() -> {
-            Collection<String> playerNames = room.getPlayers().values();
-            System.out.println("BROADCASTING PLAYERS: " + playerNames);
+            System.out.println("BROADCASTING PLAYERS: " + room.getPlayers().values());
             messagingTemplate.convertAndSend(
                     "/topic/room/" + roomCode.toUpperCase() + "/players",
-                    new PlayerListMessage(playerNames)
+                    new PlayerListMessage(room.toPlayerDtos())
             );
         });
     }

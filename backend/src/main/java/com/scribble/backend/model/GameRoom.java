@@ -1,5 +1,7 @@
 package com.scribble.backend.model;
 
+import ch.qos.logback.core.spi.FilterReply;
+import com.scribble.backend.dto.PlayerDto;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -10,6 +12,7 @@ import java.util.concurrent.locks.ReentrantLock;
 
 @Getter
 public class GameRoom {
+    @Setter private int currentRound = 0;
     @Setter private int timeRemainingSeconds = 0;
     private final Set<String> correctGuessers = new HashSet<>();
     private final Map<String, Integer> scores = new ConcurrentHashMap<>();
@@ -50,6 +53,19 @@ public class GameRoom {
 
     public void resetCorrectGuessers() {
         correctGuessers.clear();
+    }
+
+    public List<PlayerDto> toPlayerDtos() {
+        List<PlayerDto> result = new ArrayList<>();
+        for (Map.Entry<String, String> entry : players.entrySet()) {
+            String id = entry.getKey();
+            String name = entry.getValue();
+            int score = scores.getOrDefault(id, 0);
+            boolean isDrawing = id.equals(currentDrawerId);
+            boolean guessed = correctGuessers.contains(id);
+            result.add(new PlayerDto(id, name, score, isDrawing, guessed));
+        }
+        return result;
     }
 
 }

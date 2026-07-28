@@ -142,10 +142,16 @@ function App() {
       <DrawingCanvas stompClient={stompClient} roomCode={roomCode}/>
       <p>Share this code with friends to have them join.</p>
 
-      <h3>Players ({players.length})</h3>
-      <ul>
-        {players.map((name, i) => <li key={i}>{name}</li>)}
-      </ul>
+    <h3>Players ({players.length})</h3>
+<ul>
+  {players.map((p) => (
+    <li key={p.id}>
+      {p.name} — {p.score} pts
+      {p.isDrawing && " ✏️"}
+      {p.hasGuessedCorrectly && " ✅"}
+    </li>
+  ))}
+</ul>
 
       <h3>Chat / Guesses</h3>
       <ul>

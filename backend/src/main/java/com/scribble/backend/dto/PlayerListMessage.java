@@ -1,6 +1,5 @@
 package com.scribble.backend.dto;
 
-import java.util.Collection;
+import java.util.List;
 
-public record PlayerListMessage(Collection<String> players){
-}
+public record PlayerListMessage(List<PlayerDto> players) {}
