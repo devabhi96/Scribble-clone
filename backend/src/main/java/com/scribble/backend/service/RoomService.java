@@ -39,18 +39,14 @@ private String generateUniqueCode(){
     return code;
 }
 
-public String joinRoom(String roomCode,String playerName) {
+public void joinRoom(String roomCode,String playerId,String playerName) {
     GameRoom room = rooms.get(roomCode);
     if (room == null) {
         throw new IllegalArgumentException("Room code not found " + roomCode);
     }
 
-    String[] playerIdHolder = new String[1];
-    room.withLock(() -> {
-        String playerId = UUID.randomUUID().toString();
-        room.getPlayers().put(playerId, playerName);
-        playerIdHolder[0] = playerId;
-    });
+  room.withLock(() -> {
+      room.getPlayers().put(playerId,playerName);
+  });
 
-    return playerIdHolder[0];
 }}

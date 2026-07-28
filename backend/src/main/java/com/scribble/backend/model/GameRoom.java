@@ -3,9 +3,7 @@ package com.scribble.backend.model;
 import lombok.Getter;
 import lombok.Setter;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -13,6 +11,9 @@ import java.util.concurrent.locks.ReentrantLock;
 @Getter
 public class GameRoom {
     @Setter private int timeRemainingSeconds = 0;
+    private final Set<String> correctGuessers = new HashSet<>();
+    private final Map<String, Integer> scores = new ConcurrentHashMap<>();
+
     public enum GameState {
         WAITING, CHOOSING_WORD, DRAWING, ROUND_END, GAME_OVER
     }
@@ -45,6 +46,10 @@ public class GameRoom {
     public String getMaskedWord(){
         if(currentWord == null) return "";
         return currentWord.replaceAll("[a-zA-Z]","_ ").trim();
+    }
+
+    public void resetCorrectGuessers() {
+        correctGuessers.clear();
     }
 
 }

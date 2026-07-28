@@ -14,6 +14,9 @@ function App() {
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(false)
   const [stompClient, setStompClient] = useState(null)
+  const [playerId] = useState(() => crypto.randomUUID())
+  const [chatLog, setChatLog] = useState([])
+  const [guessInput, setGuessInput] = useState('')
 
   useEffect(() => {
     if (!roomCode) return
@@ -26,7 +29,6 @@ function App() {
           setPlayers(data.players || [])
         })
 
-       
         client.subscribe(`/topic/room/${roomCode}/state`, (message) => {
           console.log('GAME STATE:', JSON.parse(message.body))
         })
@@ -34,11 +36,15 @@ function App() {
         client.subscribe(`/topic/room/${roomCode}/word-choices`, (message) => {
           console.log('WORD CHOICES:', JSON.parse(message.body))
         })
-      
+
+        client.subscribe(`/topic/room/${roomCode}/chat`, (message) => {
+          const data = JSON.parse(message.body)
+          setChatLog((prev) => [...prev, data])
+        })
 
         client.publish({
           destination: `/app/room/${roomCode}/join`,
-          body: JSON.stringify({ roomCode, playerName: playerName.trim() })
+          body: JSON.stringify({ roomCode, playerName: playerName.trim(), playerId })
         })
       },
       onStompError: (frame) => {
@@ -69,6 +75,15 @@ function App() {
     if (!playerName.trim()) { setError('Enter your name first'); return }
     if (!joinCodeInput.trim()) { setError('Enter a room code'); return }
     setRoomCode(joinCodeInput.trim().toUpperCase())
+  }
+
+  const handleSubmitGuess = () => {
+    if (!guessInput.trim()) return
+    stompClient.publish({
+      destination: `/app/room/${roomCode}/guess`,
+      body: JSON.stringify({ playerId, text: guessInput.trim() })
+    })
+    setGuessInput('')
   }
 
   if (!roomCode) {
@@ -115,15 +130,14 @@ function App() {
         Start Game (test)
       </button>
 
-        <button onClick={() => {
-  stompClient.publish({
-    destination: `/app/room/${roomCode}/choose-word`,
-    body: JSON.stringify({ chosenWord: 'apple' })
-  })
-}}>
-  Choose "apple" (test)
-</button>
-
+      <button onClick={() => {
+        stompClient.publish({
+          destination: `/app/room/${roomCode}/choose-word`,
+          body: JSON.stringify({ chosenWord: 'apple' })
+        })
+      }}>
+        Choose "apple" (test)
+      </button>
 
       <DrawingCanvas stompClient={stompClient} roomCode={roomCode}/>
       <p>Share this code with friends to have them join.</p>
@@ -132,6 +146,24 @@ function App() {
       <ul>
         {players.map((name, i) => <li key={i}>{name}</li>)}
       </ul>
+
+      <h3>Chat / Guesses</h3>
+      <ul>
+        {chatLog.map((entry, i) => (
+          <li key={i} style={{ color: entry.wasCorrectGuess ? 'green' : 'black' }}>
+            <strong>{entry.playerName}:</strong> {entry.message}
+          </li>
+        ))}
+      </ul>
+
+      <input
+        type="text"
+        placeholder="Type your guess"
+        value={guessInput}
+        onChange={(e) => setGuessInput(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') handleSubmitGuess() }}
+      />
+      <button onClick={handleSubmitGuess}>Guess</button>
     </div>
   )
 }

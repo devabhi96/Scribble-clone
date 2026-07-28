@@ -23,6 +23,7 @@ public class RoomSocketController {
         this.messagingTemplate = messagingTemplate;
     }
 
+
     @MessageMapping("/room/{roomCode}/join")
     public void handleJoin(@DestinationVariable String roomCode, JoinMessage message) {
         System.out.println("JOIN RECEIVED: roomCode=" + roomCode + " playerName=" + message.playerName());
@@ -33,7 +34,7 @@ public class RoomSocketController {
             return;
         }
 
-        roomService.joinRoom(roomCode.toUpperCase(), message.playerName());
+        roomService.joinRoom(roomCode.toUpperCase(), message.playerId(), message.playerName());
 
         room.withLock(() -> {
             Collection<String> playerNames = room.getPlayers().values();
@@ -44,5 +45,8 @@ public class RoomSocketController {
             );
         });
     }
+
+
+
 
 }

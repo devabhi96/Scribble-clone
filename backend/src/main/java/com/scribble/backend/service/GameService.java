@@ -5,6 +5,8 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
+
+import com.scribble.backend.dto.ChatOrGuessBroadcast;
 import com.scribble.backend.dto.GameStateMessage;
 import com.scribble.backend.dto.WordChoicesMessage;
 
@@ -120,4 +122,53 @@ public class GameService {
                 )
         );
     }
+
+    public void submitGuess(String roomCode, String playerId, String guessText) {
+        GameRoom room = roomService.getRoom(roomCode);
+        if (room == null) return;
+
+        room.withLock(() -> {
+            if (room.getState() != GameRoom.GameState.DRAWING) return;
+            if (playerId.equals(room.getCurrentDrawerId())) return;
+            if (room.getCorrectGuessers().contains(playerId)) return;
+
+            String playerName = room.getPlayers().get(playerId);
+            boolean correct = guessText.trim().equalsIgnoreCase(room.getCurrentWord());
+
+            if (correct) {
+                room.getCorrectGuessers().add(playerId);
+
+                int points = (int) (100.0 * room.getTimeRemainingSeconds() / ROUND_DURATION_SECONDS);
+                room.getScores().merge(playerId, points, Integer::sum);
+                room.getScores().merge(room.getCurrentDrawerId(), 10, Integer::sum);
+
+                System.out.println("CORRECT GUESS: " + playerName + " earned " + points + " points");
+
+                messagingTemplate.convertAndSend(
+                        "/topic/room/" + roomCode + "/chat",
+                        new ChatOrGuessBroadcast(playerName, "guessed the word!", true)
+                );
+
+                int totalGuessers = room.getPlayers().size() - 1; // everyone except the drawer
+                if (room.getCorrectGuessers().size() >= totalGuessers && totalGuessers > 0) {
+                    System.out.println("EVERYONE GUESSED - ending round early");
+                    endRoundEarly(room);
+                }
+            } else {
+                messagingTemplate.convertAndSend(
+                        "/topic/room/" + roomCode + "/chat",
+                        new ChatOrGuessBroadcast(playerName, guessText, false)
+                );
+            }
+        });
+    }
+
+    private void endRoundEarly(GameRoom room) {
+        cancelTimer(room.getRoomCode());
+        room.setState(GameRoom.GameState.ROUND_END);
+        room.resetCorrectGuessers();
+        broadcastState(room);
+    }
+
+
 }

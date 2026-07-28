@@ -1,6 +1,7 @@
 package com.scribble.backend.websocket;
 
 import com.scribble.backend.dto.ChooseWordMessage;
+import com.scribble.backend.dto.GuessMessage;
 import com.scribble.backend.service.GameService;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageMapping;
@@ -24,4 +25,9 @@ public class GameSocketController {
     public void handleChooseWord(@DestinationVariable String roomCode, ChooseWordMessage message) {
         gameService.chooseWord(roomCode.toUpperCase(), message.chosenWord());
     }
+    @MessageMapping("/room/{roomCode}/guess")
+    public void handleGuess(@DestinationVariable String roomCode, GuessMessage message) {
+        gameService.submitGuess(roomCode.toUpperCase(), message.playerId(), message.text());
+    }
+
 }
