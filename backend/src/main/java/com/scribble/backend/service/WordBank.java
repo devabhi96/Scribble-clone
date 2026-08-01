@@ -1,7 +1,7 @@
 package com.scribble.backend.service;
 
 import org.springframework.stereotype.Component;
-
+import java.util.Collections;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.List;
@@ -17,7 +17,8 @@ public class WordBank {
 
     public List<String> getRandomOptions(int count){
         List<String> shuffled = new ArrayList<>(WORDS);
-        return shuffled.subList(0,count);
+        Collections.shuffle(shuffled, random);
+        return new ArrayList<>(shuffled.subList(0, Math.min(count, shuffled.size())));
     }
 
 

@@ -14,6 +14,7 @@ function App() {
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(false)
   const [stompClient, setStompClient] = useState(null)
+  const [connected, setConnected] = useState(false)
   const [playerId] = useState(() => crypto.randomUUID())
   const [chatLog, setChatLog] = useState([])
   const [guessInput, setGuessInput] = useState('')
@@ -23,7 +24,9 @@ function App() {
 
     const client = new Client({
       brokerURL: WS_URL,
+      connectHeaders: { playerId },
       onConnect: () => {
+        setConnected(true)
         client.subscribe(`/topic/room/${roomCode}/players`, (message) => {
           const data = JSON.parse(message.body)
           setPlayers(data.players || [])
@@ -33,8 +36,10 @@ function App() {
           console.log('GAME STATE:', JSON.parse(message.body))
         })
 
-        client.subscribe(`/topic/room/${roomCode}/word-choices`, (message) => {
-          console.log('WORD CHOICES:', JSON.parse(message.body))
+
+        client.subscribe(`/user/queue/word-choices`, (message) => {
+          const data = JSON.parse(message.body)
+          console.log('WORD CHOICES (private):', data)
         })
 
         client.subscribe(`/topic/room/${roomCode}/chat`, (message) => {
@@ -57,6 +62,7 @@ function App() {
 
     return () => {
       client.deactivate()
+      setConnected(false)
     }
   }, [roomCode])
 
@@ -139,7 +145,7 @@ function App() {
         Choose "apple" (test)
       </button>
 
-      <DrawingCanvas stompClient={stompClient} roomCode={roomCode}/>
+      <DrawingCanvas stompClient={stompClient} roomCode={roomCode} playerId={playerId} connected ={connected}/>
       <p>Share this code with friends to have them join.</p>
 
     <h3>Players ({players.length})</h3>

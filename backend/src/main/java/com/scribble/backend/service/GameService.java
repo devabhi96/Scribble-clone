@@ -68,8 +68,9 @@ public class GameService {
         List<String> options = wordBank.getRandomOptions(3);
         System.out.println("STARTING TURN: drawer=" + drawerId + " options=" + options);
 
-        messagingTemplate.convertAndSend(
-                "/topic/room/" + room.getRoomCode() + "/word-choices",
+        messagingTemplate.convertAndSendToUser(
+                drawerId,
+                "/queue/word-choices",
                 new WordChoicesMessage(options)
         );
 
@@ -160,7 +161,7 @@ public class GameService {
                 );
                 broadcastPlayers(room);
 
-                int totalGuessers = room.getPlayers().size() - 1; // everyone except the drawer
+                int totalGuessers = room.getPlayers().size() - 1;
                 if (room.getCorrectGuessers().size() >= totalGuessers && totalGuessers > 0) {
                     System.out.println("EVERYONE GUESSED - ending round early");
                     endRoundEarly(room);

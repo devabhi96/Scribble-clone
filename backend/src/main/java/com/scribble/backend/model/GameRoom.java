@@ -1,6 +1,6 @@
 package com.scribble.backend.model;
 
-import ch.qos.logback.core.spi.FilterReply;
+
 import com.scribble.backend.dto.PlayerDto;
 import lombok.Getter;
 import lombok.Setter;
