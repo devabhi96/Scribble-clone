@@ -1,14 +1,14 @@
 package com.scribble.backend.model;
 
-
+import com.scribble.backend.dto.DrawBatchMessage;
 import com.scribble.backend.dto.PlayerDto;
 import lombok.Getter;
 import lombok.Setter;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.locks.ReentrantLock;
-
 
 @Getter
 public class GameRoom {
@@ -28,9 +28,14 @@ public class GameRoom {
     @Setter private GameState state = GameState.WAITING;
     @Setter private String currentDrawerId;
     @Setter private String currentWord;
-    @Setter private int currentTurnIndex =0;
+    @Setter private int currentTurnIndex = 0;
 
     private final List<String> turnOrder = new ArrayList<>();
+
+
+    private final List<DrawBatchMessage> strokeHistory = new ArrayList<>();
+    private final Set<String> disconnectedPlayers = new HashSet<>();
+    private final Map<String, ScheduledFuture<?>> pendingRemovals = new ConcurrentHashMap<>();
 
     public GameRoom(String roomCode){
         this.roomCode = roomCode;
@@ -68,4 +73,31 @@ public class GameRoom {
         return result;
     }
 
+
+    public void addStroke(DrawBatchMessage stroke) {
+        strokeHistory.add(stroke);
+    }
+
+    public void clearStrokes() {
+        strokeHistory.clear();
+    }
+
+    public List<DrawBatchMessage> getStrokeHistorySnapshot() {
+        return new ArrayList<>(strokeHistory);
+    }
+
+
+    public void markDisconnected(String playerId) {
+        disconnectedPlayers.add(playerId);
+    }
+
+    public void markReconnected(String playerId) {
+        disconnectedPlayers.remove(playerId);
+        ScheduledFuture<?> pending = pendingRemovals.remove(playerId);
+        if (pending != null) pending.cancel(false);
+    }
+
+    public boolean isDisconnected(String playerId) {
+        return disconnectedPlayers.contains(playerId);
+    }
 }

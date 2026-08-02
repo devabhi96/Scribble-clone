@@ -24,6 +24,19 @@ public class DrawSocketController {
         GameRoom room = roomService.getRoom(roomCode.toUpperCase());
         if (room == null) return;
 
+        boolean[] allowed = {false};
+        room.withLock(() -> {
+            allowed[0] = room.getState() == GameRoom.GameState.DRAWING
+                    && message.playerId() != null
+                    && message.playerId().equals(room.getCurrentDrawerId());
+
+            if (allowed[0]) {
+                room.addStroke(message);
+            }
+        });
+
+        if (!allowed[0]) return;
+
         messagingTemplate.convertAndSend(
                 "/topic/room/" + roomCode.toUpperCase() + "/draw",
                 message

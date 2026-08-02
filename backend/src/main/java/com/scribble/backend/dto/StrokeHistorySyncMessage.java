@@ -1,4 +1,5 @@
 package com.scribble.backend.dto;
 
-public class StrokeHistorySyncMessage {
-}
+import java.util.List;
+
+public record StrokeHistorySyncMessage(List<DrawBatchMessage> strokes) {}

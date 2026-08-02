@@ -1,16 +1,16 @@
 package com.scribble.backend.websocket;
 
+import com.scribble.backend.dto.GameStateMessage;
 import com.scribble.backend.dto.JoinMessage;
 import com.scribble.backend.dto.PlayerListMessage;
+import com.scribble.backend.dto.StrokeHistorySyncMessage;
 import com.scribble.backend.model.GameRoom;
 import com.scribble.backend.service.RoomService;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
+import org.springframework.messaging.handler.annotation.Header;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
-
-import java.util.Collection;
-import java.util.Map;
 
 @Controller
 public class RoomSocketController {
@@ -23,29 +23,39 @@ public class RoomSocketController {
         this.messagingTemplate = messagingTemplate;
     }
 
-
     @MessageMapping("/room/{roomCode}/join")
-    public void handleJoin(@DestinationVariable String roomCode, JoinMessage message) {
-        System.out.println("JOIN RECEIVED: roomCode=" + roomCode + " playerName=" + message.playerName());
+    public void handleJoin(@DestinationVariable String roomCode,
+                           JoinMessage message,
+                           @Header("simpSessionId") String sessionId) {
 
         GameRoom room = roomService.getRoom(roomCode.toUpperCase());
-        if (room == null) {
-            System.out.println("ROOM NOT FOUND: " + roomCode.toUpperCase());
-            return;
+        if (room == null) return;
+
+        roomService.registerSession(sessionId, roomCode.toUpperCase(), message.playerId());
+        boolean wasReconnect = roomService.joinRoom(roomCode.toUpperCase(), message.playerId(), message.playerName());
+
+        room.withLock(() -> messagingTemplate.convertAndSend(
+                "/topic/room/" + roomCode.toUpperCase() + "/players",
+                new PlayerListMessage(room.toPlayerDtos())
+        ));
+
+        if (wasReconnect) {
+            sendSyncToPlayer(room, message.playerId());
         }
-
-        roomService.joinRoom(roomCode.toUpperCase(), message.playerId(), message.playerName());
-
-        room.withLock(() -> {
-            System.out.println("BROADCASTING PLAYERS: " + room.getPlayers().values());
-            messagingTemplate.convertAndSend(
-                    "/topic/room/" + roomCode.toUpperCase() + "/players",
-                    new PlayerListMessage(room.toPlayerDtos())
-            );
-        });
     }
 
+    private void sendSyncToPlayer(GameRoom room, String playerId) {
+        room.withLock(() -> {
+            GameStateMessage state = new GameStateMessage(
+                    room.getState().name(),
+                    room.getMaskedWord(),
+                    room.getCurrentDrawerId(),
+                    room.getTimeRemainingSeconds()
+            );
+            messagingTemplate.convertAndSendToUser(playerId, "/queue/state-sync", state);
 
-
-
+            StrokeHistorySyncMessage strokes = new StrokeHistorySyncMessage(room.getStrokeHistorySnapshot());
+            messagingTemplate.convertAndSendToUser(playerId, "/queue/sync", strokes);
+        });
+    }
 }

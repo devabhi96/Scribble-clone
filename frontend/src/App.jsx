@@ -6,6 +6,16 @@ import { Client } from '@stomp/stompjs'
 const API_BASE = 'http://localhost:8080'
 const WS_URL = 'ws://localhost:8080/ws'
 
+function getOrCreatePlayerId() {
+  const key = 'scribble-playerId'
+  let id = sessionStorage.getItem(key)
+  if (!id) {
+    id = crypto.randomUUID()
+    sessionStorage.setItem(key, id)
+  }
+  return id
+}
+
 function App() {
   const [roomCode, setRoomCode] = useState(null)
   const [playerName, setPlayerName] = useState('')
@@ -15,9 +25,19 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [stompClient, setStompClient] = useState(null)
   const [connected, setConnected] = useState(false)
-  const [playerId] = useState(() => crypto.randomUUID())
+  const [playerId] = useState(getOrCreatePlayerId)
   const [chatLog, setChatLog] = useState([])
   const [guessInput, setGuessInput] = useState('')
+
+  const [gameState, setGameState] = useState('WAITING')
+  const [maskedWord, setMaskedWord] = useState('')
+  const [timeRemaining, setTimeRemaining] = useState(0)
+  const [currentDrawerId, setCurrentDrawerId] = useState(null)
+  const [wordChoices, setWordChoices] = useState([])
+
+  const canvasRef = useRef(null)
+
+  const isDrawer = currentDrawerId === playerId
 
   useEffect(() => {
     if (!roomCode) return
@@ -27,19 +47,28 @@ function App() {
       connectHeaders: { playerId },
       onConnect: () => {
         setConnected(true)
+
         client.subscribe(`/topic/room/${roomCode}/players`, (message) => {
           const data = JSON.parse(message.body)
           setPlayers(data.players || [])
         })
 
         client.subscribe(`/topic/room/${roomCode}/state`, (message) => {
-          console.log('GAME STATE:', JSON.parse(message.body))
+          applyGameState(JSON.parse(message.body))
         })
 
+        client.subscribe(`/user/queue/state-sync`, (message) => {
+          applyGameState(JSON.parse(message.body))
+        })
 
         client.subscribe(`/user/queue/word-choices`, (message) => {
           const data = JSON.parse(message.body)
-          console.log('WORD CHOICES (private):', data)
+          setWordChoices(data.options || [])
+        })
+
+        client.subscribe(`/user/queue/sync`, (message) => {
+          const data = JSON.parse(message.body)
+          canvasRef.current?.loadStrokeHistory(data.strokes || [])
         })
 
         client.subscribe(`/topic/room/${roomCode}/chat`, (message) => {
@@ -47,14 +76,17 @@ function App() {
           setChatLog((prev) => [...prev, data])
         })
 
+        client.subscribe(`/topic/room/${roomCode}/draw`, (message) => {
+          const data = JSON.parse(message.body)
+          canvasRef.current?.drawRemoteBatch(data)
+        })
+
         client.publish({
           destination: `/app/room/${roomCode}/join`,
           body: JSON.stringify({ roomCode, playerName: playerName.trim(), playerId })
         })
       },
-      onStompError: (frame) => {
-        console.error('STOMP error', frame)
-      }
+      onStompError: (frame) => console.error('STOMP error', frame)
     })
 
     client.activate()
@@ -65,6 +97,22 @@ function App() {
       setConnected(false)
     }
   }, [roomCode])
+
+  const prevStateRef = useRef(null)
+
+  const applyGameState = (data) => {
+    setGameState(data.state)
+    setMaskedWord(data.maskedWord || '')
+    setTimeRemaining(data.timeRemainingSeconds || 0)
+    setCurrentDrawerId(data.currentDrawerId || null)
+    if (data.state !== 'CHOOSING_WORD') setWordChoices([])
+
+    if (data.state === 'CHOOSING_WORD' && prevStateRef.current !== 'CHOOSING_WORD') {
+      canvasRef.current?.resetCanvas()
+    }
+    prevStateRef.current = data.state
+  }
+
 
   const handleCreateRoom = () => {
     if (!playerName.trim()) { setError('Enter your name first'); return }
@@ -90,6 +138,18 @@ function App() {
       body: JSON.stringify({ playerId, text: guessInput.trim() })
     })
     setGuessInput('')
+  }
+
+  const handleStartGame = () => {
+    stompClient.publish({ destination: `/app/room/${roomCode}/start` })
+  }
+
+  const handleChooseWord = (word) => {
+    stompClient.publish({
+      destination: `/app/room/${roomCode}/choose-word`,
+      body: JSON.stringify({ playerId, chosenWord: word })
+    })
+    setWordChoices([])
   }
 
   if (!roomCode) {
@@ -130,34 +190,54 @@ function App() {
   return (
     <div style={{ fontFamily: 'sans-serif', padding: '2rem' }}>
       <h1>Room: {roomCode}</h1>
-      <button onClick={() => {
-        stompClient.publish({ destination: `/app/room/${roomCode}/start` })
-      }}>
-        Start Game (test)
-      </button>
 
-      <button onClick={() => {
-        stompClient.publish({
-          destination: `/app/room/${roomCode}/choose-word`,
-          body: JSON.stringify({ chosenWord: 'apple' })
-        })
-      }}>
-        Choose "apple" (test)
-      </button>
+      <div style={{ marginBottom: '1rem' }}>
+        <button onClick={handleStartGame}>Start Game</button>
+        <span style={{ marginLeft: '1rem' }}>
+          State: <strong>{gameState}</strong>
+          {' · '}Time: <strong>{timeRemaining}s</strong>
+          {' · '}Word: <strong style={{ letterSpacing: '2px' }}>{maskedWord}</strong>
+        </span>
+      </div>
 
-      <DrawingCanvas stompClient={stompClient} roomCode={roomCode} playerId={playerId} connected ={connected}/>
+      {isDrawer && gameState === 'CHOOSING_WORD' && wordChoices.length > 0 && (
+        <div style={{ marginBottom: '1rem', padding: '0.5rem', border: '2px solid #333' }}>
+          <strong>Choose a word to draw:</strong>{' '}
+          {wordChoices.map((w) => (
+            <button key={w} onClick={() => handleChooseWord(w)} style={{ marginLeft: '0.5rem' }}>
+              {w}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {isDrawer ? (
+        <p style={{ color: 'green' }}>It's your turn to draw!</p>
+      ) : (
+        <p>{players.find(p => p.id === currentDrawerId)?.name || 'Someone'} is drawing...</p>
+      )}
+
+      <DrawingCanvas
+        ref={canvasRef}
+        stompClient={stompClient}
+        roomCode={roomCode}
+        playerId={playerId}
+        connected={connected}
+        canDraw={isDrawer && gameState === 'DRAWING'}
+      />
+
       <p>Share this code with friends to have them join.</p>
 
-    <h3>Players ({players.length})</h3>
-<ul>
-  {players.map((p) => (
-    <li key={p.id}>
-      {p.name} — {p.score} pts
-      {p.isDrawing && " ✏️"}
-      {p.hasGuessedCorrectly && " ✅"}
-    </li>
-  ))}
-</ul>
+      <h3>Players ({players.length})</h3>
+      <ul>
+        {players.map((p) => (
+          <li key={p.id}>
+            {p.name} — {p.score} pts
+            {p.isDrawing && " ✏️"}
+            {p.hasGuessedCorrectly && " ✅"}
+          </li>
+        ))}
+      </ul>
 
       <h3>Chat / Guesses</h3>
       <ul>
@@ -174,8 +254,9 @@ function App() {
         value={guessInput}
         onChange={(e) => setGuessInput(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Enter') handleSubmitGuess() }}
+        disabled={isDrawer}
       />
-      <button onClick={handleSubmitGuess}>Guess</button>
+      <button onClick={handleSubmitGuess} disabled={isDrawer}>Guess</button>
     </div>
   )
 }

@@ -23,11 +23,11 @@ public class GameSocketController {
 
     @MessageMapping("/room/{roomCode}/choose-word")
     public void handleChooseWord(@DestinationVariable String roomCode, ChooseWordMessage message) {
-        gameService.chooseWord(roomCode.toUpperCase(), message.chosenWord());
+        gameService.chooseWord(roomCode.toUpperCase(), message.playerId(), message.chosenWord());
     }
+
     @MessageMapping("/room/{roomCode}/guess")
     public void handleGuess(@DestinationVariable String roomCode, GuessMessage message) {
         gameService.submitGuess(roomCode.toUpperCase(), message.playerId(), message.text());
     }
-
 }

@@ -1,5 +1,5 @@
 package com.scribble.backend.service;
-import java.sql.Time;
+
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -36,38 +36,31 @@ public class GameService {
 
     public void startGame(String roomCode) {
         GameRoom room = roomService.getRoom(roomCode);
-        System.out.println("START GAME CALLED: " + roomCode);
-        if (room == null) {
-            System.out.println("START GAME: room not found for " + roomCode);
-            return;
-        }
+        if (room == null) return;
 
         room.withLock(() -> {
-
             room.getTurnOrder().clear();
             room.getTurnOrder().addAll(room.getPlayers().keySet());
             room.setCurrentTurnIndex(0);
-            System.out.println("TURN ORDER: " + room.getTurnOrder());
+            room.setCurrentRound(0);
             startTurn(room);
         });
     }
 
     private void startTurn(GameRoom room) {
         cancelTimer(room.getRoomCode());
+        room.clearStrokes();
 
         List<String> order = room.getTurnOrder();
-        if (order.isEmpty()) {
-            System.out.println("START TURN: turn order is empty, aborting");
-            return;
-        }
+        if (order.isEmpty()) return;
 
         String drawerId = order.get(room.getCurrentTurnIndex());
         room.setCurrentDrawerId(drawerId);
         room.setState(GameRoom.GameState.CHOOSING_WORD);
 
         List<String> options = wordBank.getRandomOptions(3);
-        System.out.println("STARTING TURN: drawer=" + drawerId + " options=" + options);
 
+        // private to the drawer only — guessers never see the candidate words
         messagingTemplate.convertAndSendToUser(
                 drawerId,
                 "/queue/word-choices",
@@ -77,20 +70,24 @@ public class GameService {
         broadcastState(room);
         broadcastPlayers(room);
     }
-    public void chooseWord(String roomCode, String chosenWord) {
+
+    public void chooseWord(String roomCode, String playerId, String chosenWord) {
         GameRoom room = roomService.getRoom(roomCode);
         if (room == null) return;
 
         room.withLock(() -> {
+            if (playerId == null || !playerId.equals(room.getCurrentDrawerId())) return;
+            if (room.getState() != GameRoom.GameState.CHOOSING_WORD) return;
+
             room.setCurrentWord(chosenWord);
             room.setState(GameRoom.GameState.DRAWING);
             room.setTimeRemainingSeconds(ROUND_DURATION_SECONDS);
 
-            System.out.println("WORD CHOSEN: " + chosenWord + " for room " + roomCode);
             broadcastState(room);
             startTimer(room);
         });
     }
+
     private void startTimer(GameRoom room) {
         cancelTimer(room.getRoomCode());
 
@@ -100,12 +97,11 @@ public class GameService {
                 room.setTimeRemainingSeconds(remaining);
 
                 if (remaining <= 0) {
-                    System.out.println("ROUND ENDED (time up) for room " + room.getRoomCode());
                     cancelTimer(room.getRoomCode());
                     room.setState(GameRoom.GameState.ROUND_END);
                     broadcastState(room);
                     scheduler.schedule(() -> room.withLock(() -> advanceTurn(room)), 3, TimeUnit.SECONDS);
-                    return; // exits the inner withLock lambda, skips the line below
+                    return;
                 }
                 broadcastState(room);
             });
@@ -113,9 +109,6 @@ public class GameService {
 
         activeTimers.put(room.getRoomCode(), future);
     }
-
-
-
 
     private void cancelTimer(String roomCode) {
         ScheduledFuture<?> existing = activeTimers.remove(roomCode);
@@ -153,8 +146,6 @@ public class GameService {
                 room.getScores().merge(playerId, points, Integer::sum);
                 room.getScores().merge(room.getCurrentDrawerId(), 10, Integer::sum);
 
-                System.out.println("CORRECT GUESS: " + playerName + " earned " + points + " points");
-
                 messagingTemplate.convertAndSend(
                         "/topic/room/" + roomCode + "/chat",
                         new ChatOrGuessBroadcast(playerName, "guessed the word!", true)
@@ -163,7 +154,6 @@ public class GameService {
 
                 int totalGuessers = room.getPlayers().size() - 1;
                 if (room.getCorrectGuessers().size() >= totalGuessers && totalGuessers > 0) {
-                    System.out.println("EVERYONE GUESSED - ending round early");
                     endRoundEarly(room);
                 }
             } else {
@@ -186,12 +176,13 @@ public class GameService {
     private void advanceTurn(GameRoom room){
         room.resetCorrectGuessers();
         room.setCurrentWord(null);
+        room.clearStrokes();
 
         int nextIndex = room.getCurrentTurnIndex() + 1;
 
         if(nextIndex >= room.getTurnOrder().size()){
             room.setCurrentRound(room.getCurrentRound()+1);
-            nextIndex =0;
+            nextIndex = 0;
         }
 
         if(room.getCurrentRound() >= TOTAL_ROUNDS){
@@ -210,5 +201,4 @@ public class GameService {
                 new PlayerListMessage(room.toPlayerDtos())
         );
     }
-
 }
