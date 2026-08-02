@@ -36,6 +36,7 @@ function App() {
   const [wordChoices, setWordChoices] = useState([])
 
   const canvasRef = useRef(null)
+  const prevStateRef = useRef(null)
 
   const isDrawer = currentDrawerId === playerId
 
@@ -98,8 +99,6 @@ function App() {
     }
   }, [roomCode])
 
-  const prevStateRef = useRef(null)
-
   const applyGameState = (data) => {
     setGameState(data.state)
     setMaskedWord(data.maskedWord || '')
@@ -112,7 +111,6 @@ function App() {
     }
     prevStateRef.current = data.state
   }
-
 
   const handleCreateRoom = () => {
     if (!playerName.trim()) { setError('Enter your name first'); return }
@@ -151,6 +149,30 @@ function App() {
     })
     setWordChoices([])
   }
+
+  const getStatusMessage = () => {
+    switch (gameState) {
+      case 'WAITING':
+        return { text: 'Game has not started yet — click Start Game when everyone has joined.', color: '#888' }
+      case 'CHOOSING_WORD':
+        return isDrawer
+          ? { text: "It's your turn — pick a word above!", color: 'green' }
+          : { text: `${players.find(p => p.id === currentDrawerId)?.name || 'A player'} is choosing a word...`, color: '#888' }
+      case 'DRAWING':
+        return isDrawer
+          ? { text: "It's your turn to draw!", color: 'green' }
+          : { text: `${players.find(p => p.id === currentDrawerId)?.name || 'Someone'} is drawing...`, color: '#333' }
+      case 'ROUND_END':
+        return { text: 'Round over! Next turn starting soon...', color: '#888' }
+      case 'GAME_OVER':
+        return { text: 'Game over! Check the final scores below.', color: '#b8860b' }
+      default:
+        return { text: '', color: '#333' }
+    }
+  }
+
+  const status = getStatusMessage()
+  const sortedPlayers = [...players].sort((a, b) => b.score - a.score)
 
   if (!roomCode) {
     return (
@@ -191,14 +213,38 @@ function App() {
     <div style={{ fontFamily: 'sans-serif', padding: '2rem' }}>
       <h1>Room: {roomCode}</h1>
 
+      <h3>Players ({players.length})</h3>
+      <ul>
+        {sortedPlayers.map((p) => (
+          <li key={p.id}>
+            {p.name} — {p.score} pts
+            {p.isDrawing && " ✏️"}
+            {p.hasGuessedCorrectly && " ✅"}
+          </li>
+        ))}
+      </ul>
+
       <div style={{ marginBottom: '1rem' }}>
-        <button onClick={handleStartGame}>Start Game</button>
+        <button onClick={handleStartGame}>
+          {gameState === 'GAME_OVER' ? 'Play Again' : 'Start Game'}
+        </button>
         <span style={{ marginLeft: '1rem' }}>
           State: <strong>{gameState}</strong>
           {' · '}Time: <strong>{timeRemaining}s</strong>
           {' · '}Word: <strong style={{ letterSpacing: '2px' }}>{maskedWord}</strong>
         </span>
       </div>
+
+      {gameState === 'GAME_OVER' && (
+        <div style={{ marginBottom: '1rem', padding: '1rem', border: '2px solid #b8860b' }}>
+          <h3 style={{ margin: '0 0 0.5rem 0' }}>🏆 Final Scores</h3>
+          <ol>
+            {sortedPlayers.map((p) => (
+              <li key={p.id}>{p.name} — {p.score} pts</li>
+            ))}
+          </ol>
+        </div>
+      )}
 
       {isDrawer && gameState === 'CHOOSING_WORD' && wordChoices.length > 0 && (
         <div style={{ marginBottom: '1rem', padding: '0.5rem', border: '2px solid #333' }}>
@@ -211,11 +257,9 @@ function App() {
         </div>
       )}
 
-      {isDrawer ? (
-        <p style={{ color: 'green' }}>It's your turn to draw!</p>
-      ) : (
-        <p>{players.find(p => p.id === currentDrawerId)?.name || 'Someone'} is drawing...</p>
-      )}
+      <p style={{ color: status.color, fontWeight: gameState === 'DRAWING' || gameState === 'CHOOSING_WORD' ? 'bold' : 'normal' }}>
+        {status.text}
+      </p>
 
       <DrawingCanvas
         ref={canvasRef}
@@ -227,17 +271,6 @@ function App() {
       />
 
       <p>Share this code with friends to have them join.</p>
-
-      <h3>Players ({players.length})</h3>
-      <ul>
-        {players.map((p) => (
-          <li key={p.id}>
-            {p.name} — {p.score} pts
-            {p.isDrawing && " ✏️"}
-            {p.hasGuessedCorrectly && " ✅"}
-          </li>
-        ))}
-      </ul>
 
       <h3>Chat / Guesses</h3>
       <ul>

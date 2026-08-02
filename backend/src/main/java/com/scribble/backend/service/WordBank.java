@@ -11,7 +11,13 @@ import java.util.List;
 public class WordBank {
 
     private static final List<String> WORDS = List.of(
-            "apple","guitar","elephant","castle","rainbow","bicycle","mountain","pizza","robot","umbrella","dragon","spaceship"
+            "apple", "guitar", "elephant", "castle", "rainbow", "bicycle", "mountain", "pizza",
+            "robot", "umbrella", "dragon", "spaceship", "banana", "volcano", "penguin", "sandwich",
+            "octopus", "telescope", "waterfall", "skateboard", "campfire", "lighthouse", "kangaroo",
+            "helicopter", "snowman", "cactus", "pyramid", "dinosaur", "butterfly", "windmill",
+            "submarine", "treehouse", "jellyfish", "volleyball", "accordion", "avalanche", "bagpipes",
+            "cauldron", "compass", "firefly", "glacier", "harpoon", "igloo", "jackpot", "kayak",
+            "labyrinth", "meteor", "nectar", "oasis", "pancake"
     );
 
     private final SecureRandom random = new SecureRandom();
