@@ -52,6 +52,7 @@ public class RoomService {
         room.withLock(() -> {
             wasAlreadyPresent[0] = room.getPlayers().containsKey(playerId);
             room.getPlayers().put(playerId, playerName);
+            room.setHostIfAbsent(playerId); // first joiner becomes host, if none yet
             if (wasAlreadyPresent[0]) {
                 room.markReconnected(playerId);
             }

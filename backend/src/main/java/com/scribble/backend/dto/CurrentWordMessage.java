@@ -1,4 +1,3 @@
 package com.scribble.backend.dto;
 
-public class CurrentWordMessage {
-}
+public record CurrentWordMessage(String word) {}

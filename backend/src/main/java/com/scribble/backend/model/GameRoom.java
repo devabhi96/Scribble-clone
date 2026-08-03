@@ -5,6 +5,7 @@ import com.scribble.backend.dto.PlayerDto;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.security.SecureRandom;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
@@ -32,10 +33,23 @@ public class GameRoom {
 
     private final List<String> turnOrder = new ArrayList<>();
 
-
+    // --- Phase 8: reconnection support ---
     private final List<DrawBatchMessage> strokeHistory = new ArrayList<>();
     private final Set<String> disconnectedPlayers = new HashSet<>();
     private final Map<String, ScheduledFuture<?>> pendingRemovals = new ConcurrentHashMap<>();
+
+    // --- hint reveal support ---
+    private final Set<Integer> revealedHintIndices = new HashSet<>();
+
+    // --- host support ---
+    @Setter private String hostPlayerId;
+
+    // --- round settings (host-configurable) ---
+    @Setter private int totalRounds = 3;
+    @Setter private boolean infiniteRounds = false;
+
+    // --- word-choice auto-pick support ---
+    private final List<String> currentWordOptions = new ArrayList<>();
 
     public GameRoom(String roomCode){
         this.roomCode = roomCode;
@@ -51,9 +65,22 @@ public class GameRoom {
         }
     }
 
+    /** Masked word with any revealed hint letters shown in place of underscores. */
     public String getMaskedWord(){
-        if(currentWord == null) return "";
-        return currentWord.replaceAll("[a-zA-Z]","_ ").trim();
+        if (currentWord == null) return "";
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < currentWord.length(); i++) {
+            char c = currentWord.charAt(i);
+            if (!Character.isLetter(c)) {
+                sb.append(c);
+            } else if (revealedHintIndices.contains(i)) {
+                sb.append(c);
+            } else {
+                sb.append('_');
+            }
+            sb.append(' ');
+        }
+        return sb.toString().trim();
     }
 
     public void resetCorrectGuessers() {
@@ -73,7 +100,7 @@ public class GameRoom {
         return result;
     }
 
-
+    // call only from inside withLock
     public void addStroke(DrawBatchMessage stroke) {
         strokeHistory.add(stroke);
     }
@@ -86,7 +113,7 @@ public class GameRoom {
         return new ArrayList<>(strokeHistory);
     }
 
-
+    // call only from inside withLock
     public void markDisconnected(String playerId) {
         disconnectedPlayers.add(playerId);
     }
@@ -99,5 +126,64 @@ public class GameRoom {
 
     public boolean isDisconnected(String playerId) {
         return disconnectedPlayers.contains(playerId);
+    }
+
+    // --- hint reveal support ---
+
+    public void resetHints() {
+        revealedHintIndices.clear();
+    }
+
+    /**
+     * Reveals one more random, not-yet-revealed letter position, up to maxHints total.
+     * Call only from inside withLock. Returns true if a new hint was revealed.
+     */
+    public boolean revealRandomHint(SecureRandom random, int maxHints) {
+        if (currentWord == null) return false;
+        if (revealedHintIndices.size() >= maxHints) return false;
+
+        List<Integer> candidates = new ArrayList<>();
+        for (int i = 0; i < currentWord.length(); i++) {
+            if (Character.isLetter(currentWord.charAt(i)) && !revealedHintIndices.contains(i)) {
+                candidates.add(i);
+            }
+        }
+        if (candidates.isEmpty()) return false;
+
+        int pick = candidates.get(random.nextInt(candidates.size()));
+        revealedHintIndices.add(pick);
+        return true;
+    }
+
+    // --- host support ---
+
+    /** Sets the host only if none is set yet. Call only from inside withLock. */
+    public void setHostIfAbsent(String playerId) {
+        if (hostPlayerId == null) {
+            hostPlayerId = playerId;
+        }
+    }
+
+    public boolean isHost(String playerId) {
+        return hostPlayerId != null && hostPlayerId.equals(playerId);
+    }
+
+    /** Call only from inside withLock, after removing removedPlayerId from players. */
+    public void reassignHostIfNeeded(String removedPlayerId) {
+        if (removedPlayerId != null && removedPlayerId.equals(hostPlayerId)) {
+            hostPlayerId = players.keySet().stream().findFirst().orElse(null);
+        }
+    }
+
+    // --- word-choice auto-pick support ---
+
+    // call only from inside withLock
+    public void setWordOptions(List<String> options) {
+        currentWordOptions.clear();
+        currentWordOptions.addAll(options);
+    }
+
+    public List<String> getWordOptionsSnapshot() {
+        return new ArrayList<>(currentWordOptions);
     }
 }

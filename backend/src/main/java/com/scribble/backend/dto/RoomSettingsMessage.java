@@ -1,4 +1,3 @@
 package com.scribble.backend.dto;
 
-public class RoomSettingsMessage {
-}
+public record RoomSettingsMessage(String playerId, int totalRounds, boolean infiniteRounds) {}

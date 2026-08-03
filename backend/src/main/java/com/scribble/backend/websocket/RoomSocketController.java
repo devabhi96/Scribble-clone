@@ -1,5 +1,6 @@
 package com.scribble.backend.websocket;
 
+import com.scribble.backend.dto.CurrentWordMessage;
 import com.scribble.backend.dto.GameStateMessage;
 import com.scribble.backend.dto.JoinMessage;
 import com.scribble.backend.dto.PlayerListMessage;
@@ -36,7 +37,7 @@ public class RoomSocketController {
 
         room.withLock(() -> messagingTemplate.convertAndSend(
                 "/topic/room/" + roomCode.toUpperCase() + "/players",
-                new PlayerListMessage(room.toPlayerDtos())
+                new PlayerListMessage(room.toPlayerDtos(), room.getHostPlayerId())
         ));
 
         if (wasReconnect) {
@@ -46,16 +47,31 @@ public class RoomSocketController {
 
     private void sendSyncToPlayer(GameRoom room, String playerId) {
         room.withLock(() -> {
+            String revealed = (room.getState() == GameRoom.GameState.ROUND_END)
+                    ? room.getCurrentWord()
+                    : null;
+
             GameStateMessage state = new GameStateMessage(
                     room.getState().name(),
                     room.getMaskedWord(),
                     room.getCurrentDrawerId(),
-                    room.getTimeRemainingSeconds()
+                    room.getTimeRemainingSeconds(),
+                    room.getCurrentRound(),
+                    room.getTotalRounds(),
+                    room.isInfiniteRounds(),
+                    revealed
             );
             messagingTemplate.convertAndSendToUser(playerId, "/queue/state-sync", state);
 
             StrokeHistorySyncMessage strokes = new StrokeHistorySyncMessage(room.getStrokeHistorySnapshot());
             messagingTemplate.convertAndSendToUser(playerId, "/queue/sync", strokes);
+
+            // if this reconnecting player is the current drawer, re-send them the real word
+            if (playerId.equals(room.getCurrentDrawerId()) && room.getCurrentWord() != null) {
+                messagingTemplate.convertAndSendToUser(
+                        playerId, "/queue/current-word", new CurrentWordMessage(room.getCurrentWord())
+                );
+            }
         });
     }
 }

@@ -46,6 +46,7 @@ public class WebSocketEventListener {
                         room.getPlayers().remove(info.playerId());
                         room.getScores().remove(info.playerId());
                         room.getPendingRemovals().remove(info.playerId());
+                        room.reassignHostIfNeeded(info.playerId());
                         broadcastPlayers(room);
                     }
                 });
@@ -60,7 +61,7 @@ public class WebSocketEventListener {
     private void broadcastPlayers(GameRoom room) {
         messagingTemplate.convertAndSend(
                 "/topic/room/" + room.getRoomCode() + "/players",
-                new PlayerListMessage(room.toPlayerDtos())
+                new PlayerListMessage(room.toPlayerDtos(), room.getHostPlayerId())
         );
     }
 }

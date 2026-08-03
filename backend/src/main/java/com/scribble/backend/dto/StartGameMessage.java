@@ -1,4 +1,3 @@
 package com.scribble.backend.dto;
 
-public class StartGameMessage {
-}
+public record StartGameMessage(String playerId) {}

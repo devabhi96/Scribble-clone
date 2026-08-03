@@ -1,5 +1,13 @@
 import { useRef, useEffect, useState, forwardRef, useImperativeHandle } from "react";
 
+const PRESET_COLORS = [
+  '#000000', '#ffffff', '#ff3b30', '#ff9500', '#ffcc00', '#34c759',
+  '#30d1c9', '#007aff', '#5856d6', '#af52de', '#a2845e', '#8e8e93'
+]
+
+const CANVAS_WIDTH = 960
+const CANVAS_HEIGHT = 600
+
 const DrawingCanvas = forwardRef(function DrawingCanvas(
   { stompClient, roomCode, playerId, connected, canDraw },
   ref
@@ -16,8 +24,8 @@ const DrawingCanvas = forwardRef(function DrawingCanvas(
 
   useEffect(() => {
     const canvas = canvasRef.current
-    canvas.width = 800
-    canvas.height = 500
+    canvas.width = CANVAS_WIDTH
+    canvas.height = CANVAS_HEIGHT
     const ctx = canvas.getContext('2d')
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
@@ -61,7 +69,7 @@ const DrawingCanvas = forwardRef(function DrawingCanvas(
     strokes.forEach((batch) => drawRemoteBatch(batch))
   }
 
- const resetCanvas = () => {
+  const resetCanvas = () => {
     remoteLastPointRef.current = null
     clearBoard()
     setStrokeHistory([])
@@ -96,12 +104,17 @@ const DrawingCanvas = forwardRef(function DrawingCanvas(
     return () => clearInterval(interval)
   }, [stompClient, roomCode, color, brushSize, playerId])
 
+  // Converts a mouse/pointer event into true canvas-pixel coordinates, correcting
+  // for any difference between the canvas's internal resolution and its displayed
+  // (CSS) size — keeps strokes aligned correctly regardless of screen width.
   const getCanvasPoint = (e) => {
     const canvas = canvasRef.current
     const rect = canvas.getBoundingClientRect()
+    const scaleX = canvas.width / rect.width
+    const scaleY = canvas.height / rect.height
     return {
-      x: Math.round(e.clientX - rect.left),
-      y: Math.round(e.clientY - rect.top)
+      x: Math.round((e.clientX - rect.left) * scaleX),
+      y: Math.round((e.clientY - rect.top) * scaleY)
     }
   }
 
@@ -159,8 +172,29 @@ const DrawingCanvas = forwardRef(function DrawingCanvas(
 
   return (
     <div>
-      <div style={{ marginBottom: '0.5rem' }}>
-        <input type="color" value={color} onChange={(e) => setColor(e.target.value)} disabled={!canDraw} />
+      <div style={{ marginBottom: '0.5rem', display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.6rem' }}>
+        <div className="color-palette">
+          {PRESET_COLORS.map((c) => (
+            <button
+              key={c}
+              type="button"
+              className={`palette-swatch ${color === c ? 'active' : ''}`}
+              style={{ backgroundColor: c }}
+              onClick={() => setColor(c)}
+              disabled={!canDraw}
+              aria-label={`Color ${c}`}
+            />
+          ))}
+          <input
+            type="color"
+            className="palette-custom"
+            value={color}
+            onChange={(e) => setColor(e.target.value)}
+            disabled={!canDraw}
+            title="Custom color"
+          />
+        </div>
+
         <input
           type="range" min="1" max="20" value={brushSize}
           onChange={(e) => setBrushSize(Number(e.target.value))}
