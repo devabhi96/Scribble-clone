@@ -24,8 +24,8 @@ import java.util.List;
 public class GameService {
     private static final int ROUND_DURATION_SECONDS = 60;
     private static final int CHOOSE_WORD_DURATION_SECONDS = 15;
-    private static final int HINT_INTERVAL_SECONDS = 15; // reveal a letter this often
-    private static final int DRAWER_DISCONNECT_GRACE_SECONDS = 10; // how long to wait for the drawer specifically
+    private static final int HINT_INTERVAL_SECONDS = 15;
+    private static final int DRAWER_DISCONNECT_GRACE_SECONDS = 10;
     private static final String DRAWER_GRACE_KEY_SUFFIX = ":drawer-grace";
 
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(4);
@@ -46,13 +46,28 @@ public class GameService {
         if (room == null) return;
 
         room.withLock(() -> {
-            if (!room.isHost(playerId)) return; // only the host can start/restart
+            if (!room.isHost(playerId)) return;
+
+            // Fix: Check raw total players to bypass stale reconnect flags that block resuming
+            if (room.getPlayers().size() < 2) return;
 
             cancelDrawerGraceTimer(roomCode);
+
+            boolean isResume = (room.getTimeRemainingSeconds() > 0 || room.getCurrentRound() > 0)
+                    && room.getState() == GameRoom.GameState.WAITING;
+
             room.getTurnOrder().clear();
             room.getTurnOrder().addAll(room.getPlayers().keySet());
-            room.setCurrentTurnIndex(0);
-            room.setCurrentRound(0);
+
+            if (!isResume) {
+                room.setCurrentTurnIndex(0);
+                room.setCurrentRound(0);
+            } else {
+                if (room.getCurrentTurnIndex() >= room.getTurnOrder().size()) {
+                    room.setCurrentTurnIndex(0);
+                    room.setCurrentRound(room.getCurrentRound() + 1);
+                }
+            }
             startTurn(room);
         });
     }
@@ -63,7 +78,6 @@ public class GameService {
 
         room.withLock(() -> {
             if (!room.isHost(playerId)) return;
-            // don't allow changing settings mid-round; only when idle or after a game ends
             if (room.getState() == GameRoom.GameState.DRAWING
                     || room.getState() == GameRoom.GameState.CHOOSING_WORD
                     || room.getState() == GameRoom.GameState.ROUND_END) return;
@@ -72,7 +86,7 @@ public class GameService {
             room.setTotalRounds(clamped);
             room.setInfiniteRounds(infiniteRounds);
 
-            broadcastState(room); // pushes the new settings to everyone in the room
+            broadcastState(room);
         });
     }
 
@@ -151,7 +165,6 @@ public class GameService {
         });
     }
 
-
     private void applyChosenWord(GameRoom room, String chosenWord) {
         room.setCurrentWord(chosenWord);
         room.resetHints();
@@ -162,7 +175,6 @@ public class GameService {
         sendCurrentWordToDrawer(room);
         startTimer(room);
     }
-
 
     private void sendCurrentWordToDrawer(GameRoom room) {
         if (room.getCurrentDrawerId() == null || room.getCurrentWord() == null) return;
@@ -205,7 +217,7 @@ public class GameService {
         if (elapsed <= 0 || elapsed % HINT_INTERVAL_SECONDS != 0) return;
 
         long letterCount = word.chars().filter(Character::isLetter).count();
-        int maxHints = (int) Math.max(1, (letterCount - 1) / 2); // never reveal the whole word
+        int maxHints = (int) Math.max(1, (letterCount - 1) / 2);
 
         room.revealRandomHint(random, maxHints);
     }
@@ -216,7 +228,6 @@ public class GameService {
     }
 
     private void broadcastState(GameRoom room) {
-        // reveal the actual word only during the brief ROUND_END window
         String revealed = (room.getState() == GameRoom.GameState.ROUND_END)
                 ? room.getCurrentWord()
                 : null;
@@ -261,10 +272,7 @@ public class GameService {
                 );
                 broadcastPlayers(room);
 
-                int totalGuessers = room.getPlayers().size() - 1;
-                if (room.getCorrectGuessers().size() >= totalGuessers && totalGuessers > 0) {
-                    endRoundEarly(room);
-                }
+                checkRoundCompletion(room);
             } else {
                 messagingTemplate.convertAndSend(
                         "/topic/room/" + roomCode + "/chat",
@@ -272,6 +280,18 @@ public class GameService {
                 );
             }
         });
+    }
+
+    private void checkRoundCompletion(GameRoom room) {
+        int activePlayersCount = (int) room.getPlayers().keySet().stream()
+                .filter(id -> !room.isDisconnected(id))
+                .count();
+
+        int totalGuessers = activePlayersCount - 1;
+
+        if (room.getCorrectGuessers().size() >= totalGuessers && totalGuessers > 0) {
+            endRoundEarly(room);
+        }
     }
 
     private void endRoundEarly(GameRoom room) {
@@ -318,12 +338,43 @@ public class GameService {
         if (room == null) return;
 
         room.withLock(() -> {
+            long activePlayers = room.getPlayers().keySet().stream()
+                    .filter(id -> !room.isDisconnected(id))
+                    .count();
+
+            boolean gameInProgress = room.getState() != GameRoom.GameState.WAITING
+                    && room.getState() != GameRoom.GameState.GAME_OVER;
+
+            if (activePlayers < 2 && gameInProgress) {
+                cancelTimer(room.getRoomCode());
+                cancelDrawerGraceTimer(roomCode);
+                room.setState(GameRoom.GameState.WAITING);
+                room.setCurrentDrawerId(null);
+                room.setCurrentWord(null);
+                room.clearStrokes();
+                room.resetHints();
+                broadcastState(room);
+
+                messagingTemplate.convertAndSend(
+                        "/topic/room/" + roomCode + "/chat",
+                        new ChatOrGuessBroadcast("System", "Not enough players! Game paused.", false)
+                );
+                return;
+            }
+
             boolean isDrawer = playerId.equals(room.getCurrentDrawerId());
             boolean roundActive = room.getState() == GameRoom.GameState.DRAWING
                     || room.getState() == GameRoom.GameState.CHOOSING_WORD;
-            if (!isDrawer || !roundActive) return;
 
-            scheduleDrawerGrace(room, playerId);
+            if (isDrawer && roundActive) {
+                messagingTemplate.convertAndSend(
+                        "/topic/room/" + roomCode + "/chat",
+                        new ChatOrGuessBroadcast("System", "Drawer disconnected! Skipping in 10s...", false)
+                );
+                scheduleDrawerGrace(room, playerId);
+            } else if (roundActive) {
+                checkRoundCompletion(room);
+            }
         });
     }
 
@@ -350,12 +401,10 @@ public class GameService {
         activeTimers.put(graceKey, grace);
     }
 
-
     public void cancelDrawerGraceTimer(String roomCode) {
         ScheduledFuture<?> existing = activeTimers.remove(roomCode + DRAWER_GRACE_KEY_SUFFIX);
         if (existing != null) existing.cancel(false);
     }
-
 
     private void forceSkipTurn(GameRoom room) {
         cancelTimer(room.getRoomCode());
@@ -364,13 +413,13 @@ public class GameService {
         scheduler.schedule(() -> room.withLock(() -> advanceTurn(room)), 3, TimeUnit.SECONDS);
     }
 
-
     public void handlePlayerRemoved(String roomCode, String playerId) {
         GameRoom room = roomService.getRoom(roomCode);
         if (room == null) return;
 
         room.withLock(() -> {
             room.removeFromTurnOrder(playerId);
+            room.getCorrectGuessers().remove(playerId);
 
             boolean gameInProgress = room.getState() != GameRoom.GameState.WAITING
                     && room.getState() != GameRoom.GameState.GAME_OVER;
@@ -384,6 +433,8 @@ public class GameService {
                 room.clearStrokes();
                 room.resetHints();
                 broadcastState(room);
+            } else if (room.getState() == GameRoom.GameState.DRAWING) {
+                checkRoundCompletion(room);
             }
         });
     }

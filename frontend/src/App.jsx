@@ -9,7 +9,6 @@ import { Client } from '@stomp/stompjs'
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8080/ws';
 
-
 const STATE_LABELS = {
   WAITING: 'Waiting',
   CHOOSING_WORD: 'Choosing Word',
@@ -55,6 +54,7 @@ function App() {
   const [totalRounds, setTotalRounds] = useState(3)
   const [infiniteRounds, setInfiniteRounds] = useState(false)
   const [revealedWord, setRevealedWord] = useState(null)
+  const [autoResumeTimer, setAutoResumeTimer] = useState(null)
 
   const canvasRef = useRef(null)
   const prevStateRef = useRef(null)
@@ -104,7 +104,15 @@ function App() {
 
         client.subscribe(`/topic/room/${roomCode}/chat`, (message) => {
           const data = JSON.parse(message.body)
-          setChatLog((prev) => [...prev, data])
+          const msgWithId = { ...data, id: Date.now() + Math.random() }
+          
+          setChatLog((prev) => [...prev, msgWithId])
+
+          if (data.playerName === 'System') {
+            setTimeout(() => {
+              setChatLog((prev) => prev.filter(m => m.id !== msgWithId.id))
+            }, 12000)
+          }
         })
 
         client.subscribe(`/topic/room/${roomCode}/draw`, (message) => {
@@ -135,6 +143,34 @@ function App() {
     }
   }, [chatLog])
 
+  useEffect(() => {
+    let interval;
+    if (gameState === 'WAITING' && players.length >= 2 && timeRemaining > 0) {
+      setAutoResumeTimer(5);
+      interval = setInterval(() => {
+        setAutoResumeTimer(prev => {
+          if (prev <= 1) {
+            clearInterval(interval);
+            return 0; 
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } else {
+      setAutoResumeTimer(null);
+    }
+    return () => clearInterval(interval);
+  }, [gameState, players.length, timeRemaining]);
+
+  useEffect(() => {
+    if (autoResumeTimer === 0) {
+      if (isHost) {
+        handleStartGame();
+      }
+      setAutoResumeTimer(null);
+    }
+  }, [autoResumeTimer, isHost]);
+
   const applyGameState = (data) => {
     setGameState(data.state)
     setMaskedWord(data.maskedWord || '')
@@ -146,7 +182,6 @@ function App() {
     setRevealedWord(data.revealedWord || null)
     if (data.state !== 'CHOOSING_WORD') setWordChoices([])
 
-  
     if (data.state === 'CHOOSING_WORD' && prevStateRef.current !== 'CHOOSING_WORD') {
       canvasRef.current?.resetCanvas()
       setActualWord(null)
@@ -169,6 +204,18 @@ function App() {
     if (!playerName.trim()) { setError('Enter your name first'); return }
     if (!joinCodeInput.trim()) { setError('Enter a room code'); return }
     setRoomCode(joinCodeInput.trim().toUpperCase())
+  }
+
+  const handleExitRoom = () => {
+    if (stompClient) {
+      stompClient.deactivate() 
+    }
+    setRoomCode(null)
+    setGameState('WAITING')
+    setPlayers([])
+    setChatLog([])
+    setWordChoices([])
+    setActualWord(null)
   }
 
   const handleSubmitGuess = () => {
@@ -216,6 +263,13 @@ function App() {
   const getStatusMessage = () => {
     switch (gameState) {
       case 'WAITING':
+        if (timeRemaining > 0) {
+          if (players.length < 2) {
+            return { text: 'Game paused. Waiting for more players...', color: 'var(--chalk-white-dim)' };
+          } else if (autoResumeTimer !== null && autoResumeTimer > 0) {
+            return { text: `Game resuming in ${autoResumeTimer}s...`, color: 'var(--marker-yellow)' };
+          }
+        }
         return { text: 'Game has not started yet — click Start Game when everyone has joined.', color: 'var(--chalk-white-dim)' }
       case 'CHOOSING_WORD':
         return isDrawer
@@ -315,15 +369,27 @@ function App() {
           <p className="share-hint">Share this code so friends can join!</p>
         </div>
 
-        <button
-          className="marker-btn"
-          style={{ width: 'auto', padding: '0.55rem 1.1rem' }}
-          onClick={handleStartGame}
-          disabled={!isHost}
-        >
-          {gameState === 'GAME_OVER' ? 'Play Again' : 'Start Game'}
-        </button>
+        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+          <button
+            className="marker-btn"
+            style={{ width: 'auto', padding: '0.55rem 1.1rem' }}
+            onClick={handleStartGame}
+            disabled={!isHost || players.length < 2} 
+          >
+            {gameState === 'GAME_OVER' ? 'Play Again' : (timeRemaining > 0 && gameState === 'WAITING' ? 'Resume Game' : 'Start Game')}
+          </button>
+          
+          <button
+            className="marker-btn secondary"
+            style={{ width: 'auto', padding: '0.55rem 1.1rem', backgroundColor: '#e74c3c', color: 'white', borderColor: '#c0392b' }}
+            onClick={handleExitRoom}
+          >
+            Exit Room
+          </button>
+        </div>
+
         {!isHost && <span className="host-hint">(Only the host can start)</span>}
+        {isHost && players.length < 2 && <span className="host-hint">(Need 2+ players)</span>}
 
         <label className="rounds-setting">
           Rounds:
@@ -426,7 +492,7 @@ function App() {
           <h3>Chat / Guesses</h3>
           <div className="chat-log" ref={chatLogRef}>
             {chatLog.map((entry, i) => (
-              <div key={i} className={`chat-entry ${entry.wasCorrectGuess ? 'correct' : ''}`}>
+              <div key={entry.id || i} className={`chat-entry ${entry.wasCorrectGuess ? 'correct' : ''} ${entry.playerName === 'System' ? 'system-msg' : ''}`}>
                 <span className="author">{entry.playerName}:</span> {entry.message}
               </div>
             ))}

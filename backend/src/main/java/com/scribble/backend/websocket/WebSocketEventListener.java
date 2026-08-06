@@ -14,8 +14,6 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
-
-
 @Component
 public class WebSocketEventListener {
 
@@ -26,7 +24,7 @@ public class WebSocketEventListener {
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
     private final GameService gameService;
 
-    public WebSocketEventListener(RoomService roomService, SimpMessagingTemplate messagingTemplate,GameService gameService) {
+    public WebSocketEventListener(RoomService roomService, SimpMessagingTemplate messagingTemplate, GameService gameService) {
         this.roomService = roomService;
         this.messagingTemplate = messagingTemplate;
         this.gameService = gameService;
@@ -44,6 +42,9 @@ public class WebSocketEventListener {
 
         room.withLock(() -> {
             room.markDisconnected(info.playerId());
+
+
+            gameService.handlePlayerDisconnected(info.roomCode(), info.playerId());
 
             ScheduledFuture<?> removalTask = scheduler.schedule(() -> {
                 room.withLock(() -> {
