@@ -6,6 +6,7 @@ import com.scribble.backend.dto.JoinMessage;
 import com.scribble.backend.dto.PlayerListMessage;
 import com.scribble.backend.dto.StrokeHistorySyncMessage;
 import com.scribble.backend.model.GameRoom;
+import com.scribble.backend.service.GameService;
 import com.scribble.backend.service.RoomService;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.Header;
@@ -18,10 +19,12 @@ public class RoomSocketController {
 
     private final RoomService roomService;
     private final SimpMessagingTemplate messagingTemplate;
+    private final GameService gameService;
 
-    public RoomSocketController(RoomService roomService, SimpMessagingTemplate messagingTemplate) {
+    public RoomSocketController(RoomService roomService, SimpMessagingTemplate messagingTemplate, GameService gameService) {
         this.roomService = roomService;
         this.messagingTemplate = messagingTemplate;
+        this.gameService = gameService;
     }
 
     @MessageMapping("/room/{roomCode}/join")
@@ -41,6 +44,7 @@ public class RoomSocketController {
         ));
 
         if (wasReconnect) {
+            gameService.cancelDrawerGraceTimer(roomCode.toUpperCase());
             sendSyncToPlayer(room, message.playerId());
         }
     }

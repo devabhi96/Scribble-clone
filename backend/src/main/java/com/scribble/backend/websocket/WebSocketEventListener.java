@@ -2,6 +2,7 @@ package com.scribble.backend.websocket;
 
 import com.scribble.backend.dto.PlayerListMessage;
 import com.scribble.backend.model.GameRoom;
+import com.scribble.backend.service.GameService;
 import com.scribble.backend.service.RoomService;
 import org.springframework.context.event.EventListener;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
@@ -13,6 +14,8 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
+
+
 @Component
 public class WebSocketEventListener {
 
@@ -21,10 +24,12 @@ public class WebSocketEventListener {
     private final RoomService roomService;
     private final SimpMessagingTemplate messagingTemplate;
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(2);
+    private final GameService gameService;
 
-    public WebSocketEventListener(RoomService roomService, SimpMessagingTemplate messagingTemplate) {
+    public WebSocketEventListener(RoomService roomService, SimpMessagingTemplate messagingTemplate,GameService gameService) {
         this.roomService = roomService;
         this.messagingTemplate = messagingTemplate;
+        this.gameService = gameService;
     }
 
     @EventListener

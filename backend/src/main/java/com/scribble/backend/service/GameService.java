@@ -25,6 +25,8 @@ public class GameService {
     private static final int ROUND_DURATION_SECONDS = 60;
     private static final int CHOOSE_WORD_DURATION_SECONDS = 15;
     private static final int HINT_INTERVAL_SECONDS = 15; // reveal a letter this often
+    private static final int DRAWER_DISCONNECT_GRACE_SECONDS = 10; // how long to wait for the drawer specifically
+    private static final String DRAWER_GRACE_KEY_SUFFIX = ":drawer-grace";
 
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(4);
     private final Map<String, ScheduledFuture<?>> activeTimers = new ConcurrentHashMap<>();
@@ -46,6 +48,7 @@ public class GameService {
         room.withLock(() -> {
             if (!room.isHost(playerId)) return; // only the host can start/restart
 
+            cancelDrawerGraceTimer(roomCode);
             room.getTurnOrder().clear();
             room.getTurnOrder().addAll(room.getPlayers().keySet());
             room.setCurrentTurnIndex(0);
@@ -98,6 +101,10 @@ public class GameService {
         broadcastState(room);
         broadcastPlayers(room);
         startChoosingTimer(room);
+
+        if (room.isDisconnected(drawerId)) {
+            scheduleDrawerGrace(room, drawerId);
+        }
     }
 
     private void startChoosingTimer(GameRoom room) {
@@ -125,7 +132,6 @@ public class GameService {
         activeTimers.put(room.getRoomCode(), future);
     }
 
-    // call only from inside withLock
     private void autoChooseWord(GameRoom room) {
         List<String> options = room.getWordOptionsSnapshot();
         if (options.isEmpty()) return;
@@ -145,7 +151,7 @@ public class GameService {
         });
     }
 
-    // call only from inside withLock
+
     private void applyChosenWord(GameRoom room, String chosenWord) {
         room.setCurrentWord(chosenWord);
         room.resetHints();
@@ -157,7 +163,7 @@ public class GameService {
         startTimer(room);
     }
 
-    /** Privately tells the current drawer the actual word — never broadcast to guessers. */
+
     private void sendCurrentWordToDrawer(GameRoom room) {
         if (room.getCurrentDrawerId() == null || room.getCurrentWord() == null) return;
         messagingTemplate.convertAndSendToUser(
@@ -191,7 +197,6 @@ public class GameService {
         activeTimers.put(room.getRoomCode(), future);
     }
 
-    /** Reveals one more letter every HINT_INTERVAL_SECONDS of elapsed time, capping at ~half the word. */
     private void maybeRevealHint(GameRoom room, int remaining) {
         String word = room.getCurrentWord();
         if (word == null) return;
@@ -278,6 +283,7 @@ public class GameService {
     }
 
     private void advanceTurn(GameRoom room){
+        cancelDrawerGraceTimer(room.getRoomCode());
         room.resetCorrectGuessers();
         room.setCurrentWord(null);
         room.clearStrokes();
@@ -305,5 +311,80 @@ public class GameService {
                 "/topic/room/" + room.getRoomCode() + "/players",
                 new PlayerListMessage(room.toPlayerDtos(), room.getHostPlayerId())
         );
+    }
+
+    public void handlePlayerDisconnected(String roomCode, String playerId) {
+        GameRoom room = roomService.getRoom(roomCode);
+        if (room == null) return;
+
+        room.withLock(() -> {
+            boolean isDrawer = playerId.equals(room.getCurrentDrawerId());
+            boolean roundActive = room.getState() == GameRoom.GameState.DRAWING
+                    || room.getState() == GameRoom.GameState.CHOOSING_WORD;
+            if (!isDrawer || !roundActive) return;
+
+            scheduleDrawerGrace(room, playerId);
+        });
+    }
+
+    private void scheduleDrawerGrace(GameRoom room, String playerId) {
+        String roomCode = room.getRoomCode();
+        String graceKey = roomCode + DRAWER_GRACE_KEY_SUFFIX;
+
+        ScheduledFuture<?> existing = activeTimers.remove(graceKey);
+        if (existing != null) existing.cancel(false);
+
+        ScheduledFuture<?> grace = scheduler.schedule(() -> room.withLock(() -> {
+            activeTimers.remove(graceKey);
+
+            boolean stillGone = room.isDisconnected(playerId);
+            boolean stillTheirTurn = playerId.equals(room.getCurrentDrawerId());
+            boolean stillActive = room.getState() == GameRoom.GameState.DRAWING
+                    || room.getState() == GameRoom.GameState.CHOOSING_WORD;
+
+            if (stillGone && stillTheirTurn && stillActive) {
+                forceSkipTurn(room);
+            }
+        }), DRAWER_DISCONNECT_GRACE_SECONDS, TimeUnit.SECONDS);
+
+        activeTimers.put(graceKey, grace);
+    }
+
+
+    public void cancelDrawerGraceTimer(String roomCode) {
+        ScheduledFuture<?> existing = activeTimers.remove(roomCode + DRAWER_GRACE_KEY_SUFFIX);
+        if (existing != null) existing.cancel(false);
+    }
+
+
+    private void forceSkipTurn(GameRoom room) {
+        cancelTimer(room.getRoomCode());
+        room.setState(GameRoom.GameState.ROUND_END);
+        broadcastState(room);
+        scheduler.schedule(() -> room.withLock(() -> advanceTurn(room)), 3, TimeUnit.SECONDS);
+    }
+
+
+    public void handlePlayerRemoved(String roomCode, String playerId) {
+        GameRoom room = roomService.getRoom(roomCode);
+        if (room == null) return;
+
+        room.withLock(() -> {
+            room.removeFromTurnOrder(playerId);
+
+            boolean gameInProgress = room.getState() != GameRoom.GameState.WAITING
+                    && room.getState() != GameRoom.GameState.GAME_OVER;
+
+            if (room.getPlayers().size() < 2 && gameInProgress) {
+                cancelTimer(room.getRoomCode());
+                cancelDrawerGraceTimer(roomCode);
+                room.setState(GameRoom.GameState.WAITING);
+                room.setCurrentDrawerId(null);
+                room.setCurrentWord(null);
+                room.clearStrokes();
+                room.resetHints();
+                broadcastState(room);
+            }
+        });
     }
 }
