@@ -6,8 +6,9 @@ import "./Game.css";
 import { useEffect, useState, useRef } from "react";
 import { Client } from '@stomp/stompjs'
 
-const API_BASE = 'http://localhost:8080'
-const WS_URL = 'ws://localhost:8080/ws'
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080';
+const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8080/ws';
+
 
 const STATE_LABELS = {
   WAITING: 'Waiting',
@@ -145,8 +146,7 @@ function App() {
     setRevealedWord(data.revealedWord || null)
     if (data.state !== 'CHOOSING_WORD') setWordChoices([])
 
-    // a fresh CHOOSING_WORD phase means the previous word is gone — clear it
-    // until the real/auto-picked word for this new turn arrives privately
+  
     if (data.state === 'CHOOSING_WORD' && prevStateRef.current !== 'CHOOSING_WORD') {
       canvasRef.current?.resetCanvas()
       setActualWord(null)
