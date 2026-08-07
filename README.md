@@ -64,9 +64,3 @@ npm install
 npm run dev
 ```
 
-## What's not done yet
-
-- No accounts/persistence — everything is in-memory, resets on server restart
-- No auth (JWT planned but not built)
-- No networked undo / clear-canvas-for-everyone
-- Word list is a fixed word bank, no custom packs yet' 
