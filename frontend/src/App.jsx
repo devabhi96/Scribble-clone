@@ -5,8 +5,8 @@ import "./Game.css";
 
 import { useEffect, useState, useRef } from "react";
 import { Client } from '@stomp/stompjs'
+import { ensureSession, login, register, logout, authFetch } from './auth.js'
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8080';
 const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8080/ws';
 
 const STATE_LABELS = {
@@ -19,16 +19,6 @@ const STATE_LABELS = {
 
 const ROUND_OPTIONS = [1, 2, 3, 5, 8, 10]
 
-function getOrCreatePlayerId() {
-  const key = 'scribble-playerId'
-  let id = sessionStorage.getItem(key)
-  if (!id) {
-    id = crypto.randomUUID()
-    sessionStorage.setItem(key, id)
-  }
-  return id
-}
-
 function App() {
   const [roomCode, setRoomCode] = useState(null)
   const [playerName, setPlayerName] = useState('')
@@ -40,7 +30,14 @@ function App() {
   const [loading, setLoading] = useState(false)
   const [stompClient, setStompClient] = useState(null)
   const [connected, setConnected] = useState(false)
-  const [playerId] = useState(getOrCreatePlayerId)
+  const [playerId, setPlayerId] = useState(null)
+  const [authToken, setAuthToken] = useState(null)
+  const [authRole, setAuthRole] = useState('GUEST')
+  const [authReady, setAuthReady] = useState(false)
+  const [showLogin, setShowLogin] = useState(false)
+  const [loginUsername, setLoginUsername] = useState('')
+  const [loginPassword, setLoginPassword] = useState('')
+  const [authError, setAuthError] = useState(null)
   const [chatLog, setChatLog] = useState([])
   const [guessInput, setGuessInput] = useState('')
 
@@ -64,12 +61,52 @@ function App() {
   const isHost = hostPlayerId === playerId
   const settingsLocked = gameState === 'DRAWING' || gameState === 'CHOOSING_WORD' || gameState === 'ROUND_END'
 
+  // On app load, get (or mint) a session before anything else can happen.
   useEffect(() => {
-    if (!roomCode) return
+    ensureSession()
+      .then((session) => {
+        setPlayerId(session.playerId)
+        setAuthToken(session.token)
+        setAuthRole(session.role)
+        setAuthReady(true)
+      })
+      .catch((err) => setError(err.message))
+  }, [])
+
+  const applySession = (session) => {
+    setPlayerId(session.playerId)
+    setAuthToken(session.token)
+    setAuthRole(session.role)
+    setShowLogin(false)
+    setAuthError(null)
+  }
+
+  const handleLogin = () => {
+    setAuthError(null)
+    login(loginUsername.trim(), loginPassword)
+      .then(applySession)
+      .catch((err) => setAuthError(err.message))
+  }
+
+  const handleRegister = () => {
+    setAuthError(null)
+    register(loginUsername.trim(), loginPassword)
+      .then(applySession)
+      .catch((err) => setAuthError(err.message))
+  }
+
+  const handleLogout = () => {
+    logout()
+    setShowLogin(false)
+    ensureSession().then(applySession)
+  }
+
+  useEffect(() => {
+    if (!roomCode || !authToken) return
 
     const client = new Client({
       brokerURL: WS_URL,
-      connectHeaders: { playerId },
+      connectHeaders: { Authorization: `Bearer ${authToken}` },
       onConnect: () => {
         setConnected(true)
 
@@ -135,7 +172,7 @@ function App() {
       client.deactivate()
       setConnected(false)
     }
-  }, [roomCode])
+  }, [roomCode, authToken])
 
   useEffect(() => {
     if (chatLogRef.current) {
@@ -193,7 +230,7 @@ function App() {
     if (!playerName.trim()) { setError('Enter your name first'); return }
     setLoading(true); setError(null)
 
-    fetch(`${API_BASE}/api/rooms`, { method: 'POST' })
+    authFetch(`/api/rooms`, { method: 'POST' })
       .then((res) => res.json())
       .then((data) => setRoomCode(data.roomCode))
       .catch((err) => setError(err.message))
@@ -324,6 +361,45 @@ function App() {
 
           <p className="landing-subtitle">Draw. Guess. Repeat.</p>
 
+          <div className="landing-auth" style={{ marginBottom: '1rem', textAlign: 'center' }}>
+            {authRole === 'USER' ? (
+              <p style={{ fontSize: '0.85rem' }}>
+                Logged in as <strong>{loginUsername || 'you'}</strong> ·{' '}
+                <button className="link-btn" onClick={handleLogout}>Log out</button>
+              </p>
+            ) : !showLogin ? (
+              <p style={{ fontSize: '0.85rem' }}>
+                Playing as guest ·{' '}
+                <button className="link-btn" onClick={() => setShowLogin(true)}>Log in / Sign up</button>
+              </p>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', maxWidth: 260, margin: '0 auto' }}>
+                <input
+                  type="text"
+                  className="landing-input"
+                  placeholder="Username"
+                  value={loginUsername}
+                  onChange={(e) => setLoginUsername(e.target.value)}
+                  maxLength={20}
+                />
+                <input
+                  type="password"
+                  className="landing-input"
+                  placeholder="Password (min 8 chars)"
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  maxLength={72}
+                />
+                {authError && <p style={{ color: 'salmon', fontSize: '0.8rem' }}>{authError}</p>}
+                <div style={{ display: 'flex', gap: '0.4rem' }}>
+                  <button className="marker-btn" onClick={handleLogin}>Log in</button>
+                  <button className="marker-btn" onClick={handleRegister}>Sign up</button>
+                  <button className="link-btn" onClick={() => setShowLogin(false)}>Cancel</button>
+                </div>
+              </div>
+            )}
+          </div>
+
           <AvatarPicker index={avatarIndex} onChange={setAvatarIndex} />
 
           <input
@@ -335,7 +411,7 @@ function App() {
             maxLength={20}
           />
 
-          <button className="marker-btn" onClick={handleCreateRoom} disabled={loading}>
+          <button className="marker-btn" onClick={handleCreateRoom} disabled={loading || !authReady}>
             {loading ? 'Working...' : 'Create Room'}
           </button>
 
