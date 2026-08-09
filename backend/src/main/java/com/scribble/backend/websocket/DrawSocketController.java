@@ -8,6 +8,8 @@ import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 
+import java.security.Principal;
+
 @Controller
 public class DrawSocketController {
 
@@ -20,15 +22,16 @@ public class DrawSocketController {
     }
 
     @MessageMapping("/room/{roomCode}/draw")
-    public void handleDraw(@DestinationVariable String roomCode, DrawBatchMessage message){
+    public void handleDraw(@DestinationVariable String roomCode, DrawBatchMessage message, Principal principal){
         GameRoom room = roomService.getRoom(roomCode.toUpperCase());
         if (room == null) return;
+
+        String playerId = principal.getName();
 
         boolean[] allowed = {false};
         room.withLock(() -> {
             allowed[0] = room.getState() == GameRoom.GameState.DRAWING
-                    && message.playerId() != null
-                    && message.playerId().equals(room.getCurrentDrawerId());
+                    && playerId.equals(room.getCurrentDrawerId());
 
             if (allowed[0]) {
                 room.addStroke(message);

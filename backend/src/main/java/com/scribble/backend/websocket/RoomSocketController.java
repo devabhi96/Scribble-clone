@@ -14,6 +14,8 @@ import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Controller;
 
+import java.security.Principal;
+
 @Controller
 public class RoomSocketController {
 
@@ -30,13 +32,18 @@ public class RoomSocketController {
     @MessageMapping("/room/{roomCode}/join")
     public void handleJoin(@DestinationVariable String roomCode,
                            JoinMessage message,
-                           @Header("simpSessionId") String sessionId) {
+                           @Header("simpSessionId") String sessionId,
+                           Principal principal) {
+
+        // playerId always comes from the authenticated JWT identity, never from the
+        // client-supplied payload — otherwise anyone could claim to be anyone.
+        String playerId = principal.getName();
 
         GameRoom room = roomService.getRoom(roomCode.toUpperCase());
         if (room == null) return;
 
-        roomService.registerSession(sessionId, roomCode.toUpperCase(), message.playerId());
-        boolean wasReconnect = roomService.joinRoom(roomCode.toUpperCase(), message.playerId(), message.playerName());
+        roomService.registerSession(sessionId, roomCode.toUpperCase(), playerId);
+        boolean wasReconnect = roomService.joinRoom(roomCode.toUpperCase(), playerId, message.playerName());
 
         room.withLock(() -> messagingTemplate.convertAndSend(
                 "/topic/room/" + roomCode.toUpperCase() + "/players",
@@ -45,7 +52,7 @@ public class RoomSocketController {
 
         if (wasReconnect) {
             gameService.cancelDrawerGraceTimer(roomCode.toUpperCase());
-            sendSyncToPlayer(room, message.playerId());
+            sendSyncToPlayer(room, playerId);
         }
     }
 

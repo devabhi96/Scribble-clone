@@ -91,7 +91,6 @@ const DrawingCanvas = forwardRef(function DrawingCanvas(
       stompClient.publish({
         destination: `/app/room/${roomCode}/draw`,
         body: JSON.stringify({
-          playerId,
           points: pointBufferRef.current,
           color,
           brushSize

@@ -159,7 +159,7 @@ function App() {
 
         client.publish({
           destination: `/app/room/${roomCode}/join`,
-          body: JSON.stringify({ roomCode, playerName: playerName.trim(), playerId })
+          body: JSON.stringify({ roomCode, playerName: playerName.trim() })
         })
       },
       onStompError: (frame) => console.error('STOMP error', frame)
@@ -259,7 +259,7 @@ function App() {
     if (!guessInput.trim()) return
     stompClient.publish({
       destination: `/app/room/${roomCode}/guess`,
-      body: JSON.stringify({ playerId, text: guessInput.trim() })
+      body: JSON.stringify({ text: guessInput.trim() })
     })
     setGuessInput('')
   }
@@ -267,15 +267,14 @@ function App() {
   const handleStartGame = () => {
     if (!isHost) return
     stompClient.publish({
-      destination: `/app/room/${roomCode}/start`,
-      body: JSON.stringify({ playerId })
+      destination: `/app/room/${roomCode}/start`
     })
   }
 
   const handleChooseWord = (word) => {
     stompClient.publish({
       destination: `/app/room/${roomCode}/choose-word`,
-      body: JSON.stringify({ playerId, chosenWord: word })
+      body: JSON.stringify({ chosenWord: word })
     })
     setWordChoices([])
   }
@@ -284,7 +283,7 @@ function App() {
     if (!isHost || !stompClient) return
     stompClient.publish({
       destination: `/app/room/${roomCode}/settings`,
-      body: JSON.stringify({ playerId, totalRounds: nextTotalRounds, infiniteRounds: nextInfinite })
+      body: JSON.stringify({ totalRounds: nextTotalRounds, infiniteRounds: nextInfinite })
     })
   }
 
