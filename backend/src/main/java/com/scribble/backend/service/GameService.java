@@ -15,6 +15,8 @@ import com.scribble.backend.dto.PlayerListMessage;
 import com.scribble.backend.dto.WordChoicesMessage;
 
 import com.scribble.backend.model.GameRoom;
+import com.scribble.backend.security.RateLimiter;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
@@ -33,12 +35,15 @@ public class GameService {
     private final RoomService roomService;
     private final WordBank wordBank;
     private final SimpMessagingTemplate messagingTemplate;
+    private final RateLimiter guessRateLimiter;
     private final SecureRandom random = new SecureRandom();
 
-    public GameService(RoomService roomService, WordBank wordBank, SimpMessagingTemplate messagingTemplate) {
+    public GameService(RoomService roomService, WordBank wordBank, SimpMessagingTemplate messagingTemplate,
+                       @Qualifier("guessRateLimiter") RateLimiter guessRateLimiter) {
         this.roomService = roomService;
         this.wordBank = wordBank;
         this.messagingTemplate = messagingTemplate;
+        this.guessRateLimiter = guessRateLimiter;
     }
 
     public void startGame(String roomCode, String playerId) {
@@ -250,6 +255,9 @@ public class GameService {
     public void submitGuess(String roomCode, String playerId, String guessText) {
         GameRoom room = roomService.getRoom(roomCode);
         if (room == null) return;
+        if (guessText == null || guessText.isBlank()) return;
+        if (guessText.length() > 200) return; // reject absurdly long payloads outright
+        if (!guessRateLimiter.allow(playerId)) return; // too many guesses too fast — silently drop
 
         room.withLock(() -> {
             if (room.getState() != GameRoom.GameState.DRAWING) return;
