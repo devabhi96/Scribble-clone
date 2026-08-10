@@ -6,6 +6,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.security.SecureRandom;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -141,6 +142,22 @@ class GameRoomTest {
         room.clearStrokes();
 
         assertEquals(0, room.getStrokeHistorySnapshot().size());
+    }
+
+    @Test
+    void players_preservesJoinOrderRegardlessOfInsertionPattern() {
+        // Join in a deliberately non-alphabetical, non-hash-friendly order.
+        room.getPlayers().put("p3", "Charlie");
+        room.getPlayers().put("p1", "Alice");
+        room.getPlayers().put("p2", "Bob");
+        room.getPlayers().remove("p1");
+        room.getPlayers().put("p1", "Alice"); // rejoin - moves to the end, like a real reconnect
+
+        assertEquals(
+                List.of("p3", "p2", "p1"),
+                new ArrayList<>(room.getPlayers().keySet()),
+                "players should iterate in the order entries were added, not hash order"
+        );
     }
 
     @Test

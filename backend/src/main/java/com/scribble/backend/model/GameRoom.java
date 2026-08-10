@@ -23,7 +23,7 @@ public class GameRoom {
     }
 
     private final String roomCode;
-    private final Map<String,String> players = new ConcurrentHashMap<>();
+    private final Map<String,String> players = Collections.synchronizedMap(new LinkedHashMap<>());
     private final ReentrantLock lock = new ReentrantLock();
 
     @Setter private GameState state = GameState.WAITING;

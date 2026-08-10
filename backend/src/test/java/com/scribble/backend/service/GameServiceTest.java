@@ -61,12 +61,28 @@ class GameServiceTest {
         gameService.startGame("ROOM1", "host-id");
 
         assertEquals(GameRoom.GameState.CHOOSING_WORD, room.getState());
-        // NOTE: players is a ConcurrentHashMap, so turn order is NOT guaranteed to follow
-        // join order (that's a separate, real finding — see the write-up). We only assert
-        // that a *valid* player was picked as drawer, not which specific one.
-        assertTrue(
-                room.getCurrentDrawerId().equals("host-id") || room.getCurrentDrawerId().equals("guest-id"),
-                "Drawer should be one of the two players in the room"
+        // players is now an order-preserving map, so turn order follows join order
+        // deterministically: host-id joined first, so they draw first.
+        assertEquals("host-id", room.getCurrentDrawerId(), "First player to join should draw first");
+    }
+
+    @Test
+    void startGame_turnOrderFollowsJoinOrderRegardlessOfHost() {
+        // Rebuild the room so players join in a specific, known sequence:
+        // guest-id joins before host-id, even though host-id is still the host.
+        room = new GameRoom("ROOM1");
+        room.getPlayers().put("guest-id", "Bob");
+        room.getPlayers().put("host-id", "Alice");
+        room.setHostIfAbsent("host-id");
+        when(roomService.getRoom("ROOM1")).thenReturn(room);
+        when(wordBank.getRandomOptions(3)).thenReturn(java.util.List.of("cat", "dog", "sun"));
+
+        gameService.startGame("ROOM1", "host-id");
+
+        assertEquals(
+                java.util.List.of("guest-id", "host-id"),
+                room.getTurnOrder(),
+                "Turn order should mirror the order players joined the room"
         );
     }
 

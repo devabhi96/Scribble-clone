@@ -6,7 +6,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.Collection;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -31,7 +32,8 @@ public class RoomController {
         if (room == null) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "Room not found"));
         }
-        Collection<String> playerNames = room.getPlayers().values();
+        List<String> playerNames = new ArrayList<>();
+        room.withLock(() -> playerNames.addAll(room.getPlayers().values()));
         return ResponseEntity.ok(Map.of("players", playerNames));
     }
 }
