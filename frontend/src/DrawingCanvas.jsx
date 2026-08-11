@@ -9,7 +9,7 @@ const CANVAS_WIDTH = 960
 const CANVAS_HEIGHT = 600
 
 const DrawingCanvas = forwardRef(function DrawingCanvas(
-  { stompClient, roomCode, playerId, connected, canDraw },
+{ stompClient, roomCode, playerId, canDraw },
   ref
 ) {
   const canvasRef = useRef(null)

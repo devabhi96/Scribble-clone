@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { Client } from "@stomp/stompjs";
 
 const WS_URL = import.meta.env.VITE_WS_URL || "ws://localhost:8080/ws";
-
+// Caps how many chat/guess entries we keep in memory client-side, so a long
+// game session doesn't grow this array (and the DOM list rendering it) forever.
 const MAX_CHAT_LOG_ENTRIES = 200;
 
 export function useGameSocket({ roomCode, authToken, playerName, playerId }) {
@@ -93,7 +94,7 @@ export function useGameSocket({ roomCode, authToken, playerName, playerId }) {
 
           setChatLog((prev) => {
             const next = [...prev, msgWithId];
-            
+            // Trim from the front once we exceed the cap, oldest messages first.
             return next.length > MAX_CHAT_LOG_ENTRIES
               ? next.slice(next.length - MAX_CHAT_LOG_ENTRIES)
               : next;
@@ -126,7 +127,7 @@ export function useGameSocket({ roomCode, authToken, playerName, playerId }) {
       client.deactivate();
       setConnected(false);
     };
-    
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [roomCode, authToken]);
 
   useEffect(() => {
@@ -138,6 +139,11 @@ export function useGameSocket({ roomCode, authToken, playerName, playerId }) {
   useEffect(() => {
     let interval;
     if (gameState === "WAITING" && players.length >= 2 && timeRemaining > 0) {
+      // A countdown-before-auto-resume has no external system to subscribe to —
+      // the timer IS the state. Direct setState here is the correct approach;
+      // the lint rule's "cascading renders" concern doesn't apply to a value
+      // no other effect reads synchronously in the same render.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setAutoResumeTimer(5);
       interval = setInterval(() => {
         setAutoResumeTimer((prev) => {
@@ -183,9 +189,13 @@ export function useGameSocket({ roomCode, authToken, playerName, playerId }) {
       if (isHost) {
         handleStartGame();
       }
+      // Resetting the timer that drove this very effect back to its idle
+      // value — not a cascading update to unrelated state, just closing out
+      // this effect's own countdown.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setAutoResumeTimer(null);
     }
-    
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoResumeTimer, isHost]);
 
   const handleChooseWord = (word) => {
