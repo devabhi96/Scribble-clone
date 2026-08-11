@@ -3,6 +3,7 @@ import { Client } from "@stomp/stompjs";
 
 const WS_URL = import.meta.env.VITE_WS_URL || "ws://localhost:8080/ws";
 
+const MAX_CHAT_LOG_ENTRIES = 200;
 
 export function useGameSocket({ roomCode, authToken, playerName, playerId }) {
   const [players, setPlayers] = useState([]);
@@ -90,7 +91,13 @@ export function useGameSocket({ roomCode, authToken, playerName, playerId }) {
           const data = JSON.parse(message.body);
           const msgWithId = { ...data, id: Date.now() + Math.random() };
 
-          setChatLog((prev) => [...prev, msgWithId]);
+          setChatLog((prev) => {
+            const next = [...prev, msgWithId];
+            
+            return next.length > MAX_CHAT_LOG_ENTRIES
+              ? next.slice(next.length - MAX_CHAT_LOG_ENTRIES)
+              : next;
+          });
 
           if (data.playerName === "System") {
             setTimeout(() => {
@@ -119,7 +126,7 @@ export function useGameSocket({ roomCode, authToken, playerName, playerId }) {
       client.deactivate();
       setConnected(false);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    
   }, [roomCode, authToken]);
 
   useEffect(() => {
@@ -178,7 +185,7 @@ export function useGameSocket({ roomCode, authToken, playerName, playerId }) {
       }
       setAutoResumeTimer(null);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    
   }, [autoResumeTimer, isHost]);
 
   const handleChooseWord = (word) => {
